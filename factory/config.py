@@ -74,3 +74,14 @@ class Settings:
     @property
     def products_dir(self) -> Path:
         return self.data / "products"
+
+    @property
+    def skills_dir(self) -> Path:
+        env_skills = os.getenv("FACTORY_SKILLS_DIR")
+        if env_skills:
+            return Path(env_skills).resolve()
+        return (Path(__file__).parent.parent / "skills").resolve()
+
+    @property
+    def starters_dir(self) -> Path:
+        return (Path(__file__).parent / "starters").resolve()

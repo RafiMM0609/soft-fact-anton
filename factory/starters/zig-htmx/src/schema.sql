@@ -1,0 +1,8 @@
+-- Application schema. Executed at boot by src/core/db.zig.
+--
+-- The chassis deliberately ships NO sample tables. It used to define `items` and
+-- `inventory_logs`, which no brief asked for: a worker asked for a `produk` table replaced them,
+-- and the reviewer correctly rejected the task for "removing pre-existing tables" that were
+-- never part of the contract. An empty file states plainly that the schema is the task's job.
+--
+-- Add tables here with CREATE TABLE IF NOT EXISTS so a restart is idempotent.

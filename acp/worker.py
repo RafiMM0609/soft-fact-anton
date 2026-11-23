@@ -10,6 +10,7 @@ import asyncio
 import concurrent.futures
 import logging
 from pathlib import Path
+import shutil
 import tempfile
 from typing import Any, Callable
 
@@ -52,18 +53,53 @@ class AcpWorker:
         runner: Callable[..., str] | None = None,
         harness_path: str | None = None,
         command: list[str] | None = None,
+        skills_dir: Path | str | None = None,
     ) -> None:
         self.agent_name = agent_name
         self.model = model
         self.runner = runner
         self.harness_path = harness_path
         self.command = command
+        self.skills_dir = (
+            Path(skills_dir).resolve()
+            if skills_dir
+            else (Path(__file__).parent.parent / "skills").resolve()
+        )
 
-    def _prepare_prompt(self, instruction: str, skills: tuple[str, ...] | list[str]) -> str:
-        if skills:
-            skills_section = "\n\nACTIVE SKILLS:\n" + "\n".join(f"- {s}" for s in skills)
-            return instruction + skills_section
-        return instruction
+    def _prepare_prompt(
+        self,
+        instruction: str,
+        skills: tuple[str, ...] | list[str],
+        worktree_path: Path | None = None,
+    ) -> str:
+        if not skills:
+            return instruction
+
+        skills_sections: list[str] = []
+        for skill in skills:
+            skill_dir = self.skills_dir / skill
+            skill_md = skill_dir / "SKILL.md"
+            if skill_md.is_file():
+                try:
+                    content = skill_md.read_text(encoding="utf-8")
+                    skills_sections.append(f"\n\n=== LOADED SKILL GUIDELINES: {skill} ===\n{content}\n")
+                except Exception as exc:
+                    logger.warning("Could not read skill %s: %s", skill, exc)
+                    skills_sections.append(f"\n\n- Active Skill: {skill}")
+            else:
+                skills_sections.append(f"\n\n- Active Skill: {skill}")
+
+            # Also mount into .agents/skills in worktree so agy workspace discovery finds it
+            if worktree_path and skill_dir.is_dir():
+                target_skill_dir = worktree_path / ".agents" / "skills" / skill
+                try:
+                    target_skill_dir.parent.mkdir(parents=True, exist_ok=True)
+                    if not target_skill_dir.exists():
+                        shutil.copytree(skill_dir, target_skill_dir, dirs_exist_ok=True)
+                except Exception as exc:
+                    logger.debug("Could not copy skill %s to worktree: %s", skill, exc)
+
+        return instruction + "".join(skills_sections)
 
     def run_task(
         self,
@@ -96,7 +132,7 @@ class AcpWorker:
         if not worktree_path.is_dir():
             raise FileNotFoundError(f"Worktree directory not found: {worktree_path}")
 
-        prompt_text = self._prepare_prompt(instruction, skills)
+        prompt_text = self._prepare_prompt(instruction, skills, worktree_path=worktree_path)
 
         with tempfile.TemporaryDirectory(prefix="acp_worker_home_") as tmp_home_dir:
             temp_home = Path(tmp_home_dir)

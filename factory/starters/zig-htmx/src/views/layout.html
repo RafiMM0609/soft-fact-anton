@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin &amp; ERP Dashboard</title>
+  <script src="/assets/htmx.min.js" data-original-src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script>
+    htmx.config.useTemplateFragments = true;
+    // Enable HTMX to swap 4xx and 5xx responses (validation errors, 404, 409, 422, 500 error fragments targeted at #form-error or OOB)
+    document.addEventListener('htmx:beforeOnLoad', function (evt) {
+      if (evt.detail.xhr.status >= 400 && evt.detail.xhr.status < 600) {
+        evt.detail.shouldSwap = true;
+        evt.detail.isError = false;
+      }
+    });
+  </script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      min-height: 100vh;
+    }
+    aside {
+      width: 240px;
+      background: var(--card-bg);
+      border-right: 1px solid var(--border);
+      padding: 24px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    aside h2 { font-size: 1.1rem; color: var(--primary); }
+    aside nav a {
+      display: block;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+    aside nav a:hover, aside nav a.active {
+      background: #334155;
+      color: var(--text);
+    }
+    main {
+      flex: 1;
+      padding: 32px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th { color: var(--text-muted); font-size: 0.875rem; text-transform: uppercase; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      background: #0284c7;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <aside>
+    <h2>Factory ERP</h2>
+    <nav id="app-nav">
+      <a href="/" class="active">Dashboard</a>
+      <a href="/items" hx-get="/api/items" hx-target="#main-content">Master Barang</a>
+    </nav>
+  </aside>
+
+  <main id="main-content">
+    <div id="form-error" role="alert" style="color: #ef4444; margin-bottom: 16px; font-size: 0.875rem;"></div>
+    {{CONTENT}}
+  </main>
+</body>
+</html>

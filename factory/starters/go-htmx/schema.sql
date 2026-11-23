@@ -1,0 +1,2 @@
+-- Baseline schema for Go + HTMX starter.
+-- Task 1 workers add domain tables here (CREATE TABLE IF NOT EXISTS ...).

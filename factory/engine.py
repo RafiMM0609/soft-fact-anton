@@ -17,6 +17,12 @@ from factory.products import ensure_repo, head_commit
 from factory.testing import Tester
 from factory.verifier import Verifier
 
+try:
+    from factory.design import DesignDealer, deal_blocks
+except ImportError:
+    DesignDealer = None  # type: ignore[assignment, misc]
+    deal_blocks = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 PLANNER_PROMPT = """\
@@ -156,8 +162,29 @@ class Engine:
                 )
 
             # 2. Execute parallel wave builder over worktrees
+            dealer = None
+            if DesignDealer and hasattr(self.settings, "skills_dir") and self.settings.skills_dir.is_dir():
+                try:
+                    dealer = DesignDealer(self.settings.skills_dir)
+                except Exception as exc:
+                    logger.debug("DesignDealer initialization skipped: %s", exc)
+
             def instructions_for(task: Task, context: dict[str, Any] | None = None) -> str:
-                return task.instructions
+                parts = [f"TASK ({task.id}): {task.title}\n{task.instructions}"]
+                if task.acceptance:
+                    parts.append("\nACCEPTANCE CRITERIA:\n" + "\n".join(f"- {c}" for c in task.acceptance))
+
+                # Deal design block if task has design skills
+                if dealer and deal_blocks and any("design" in s or s in ("animate", "apple-design", "break-ui", "emil-design-eng") for s in task.skills):
+                    try:
+                        deal = dealer.deal(project_id, brief=brief)
+                        dealt_text = deal_blocks(deal)
+                        if dealt_text:
+                            parts.append(f"\nDEALT DESIGN SPECIFICATION:\n{dealt_text}")
+                    except Exception as exc:
+                        logger.debug("Could not deal design block: %s", exc)
+
+                return "\n".join(parts)
 
             completed_tasks = self.builder.build_tasks(
                 project=project,
