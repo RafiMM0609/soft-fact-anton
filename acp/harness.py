@@ -283,6 +283,16 @@ def isolated_env(
         (home_path / ".cache").mkdir(parents=True, exist_ok=True, mode=0o700)
         (home_path / ".local" / "share").mkdir(parents=True, exist_ok=True, mode=0o700)
 
+        # Preserve agy/gemini CLI authentication by linking ~/.gemini into isolated HOME
+        real_home = Path.home()
+        real_gemini = real_home / ".gemini"
+        target_gemini = home_path / ".gemini"
+        if real_gemini.is_dir() and not target_gemini.exists():
+            try:
+                target_gemini.symlink_to(real_gemini)
+            except OSError:
+                pass
+
         env["HOME"] = str(home_path)
         env["XDG_CONFIG_HOME"] = str(home_path / ".config")
         env["XDG_CACHE_HOME"] = str(home_path / ".cache")

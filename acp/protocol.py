@@ -54,7 +54,7 @@ class ClientInfo(BaseModel):
 class InitializeParams(BaseModel):
     """Parameters for ACP initialize request."""
 
-    protocolVersion: str = "1.0"
+    protocolVersion: int | str = 1
     clientInfo: ClientInfo = Field(default_factory=ClientInfo)
 
 
@@ -69,7 +69,7 @@ class SessionPromptParams(BaseModel):
     """Parameters for session/prompt request."""
 
     sessionId: str
-    prompt: str
+    prompt: Any
 
 
 class SessionCancelParams(BaseModel):

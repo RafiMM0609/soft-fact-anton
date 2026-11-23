@@ -366,14 +366,14 @@ class AcpClient:
 
     async def initialize(
         self,
-        protocol_version: str = "1.0",
+        protocol_version: int | str = 1,
         client_info: dict[str, Any] | None = None,
         timeout: float = 10.0,
     ) -> Any:
         """Perform the ACP initialize handshake.
 
         Args:
-            protocol_version: Protocol version string (default "1.0").
+            protocol_version: Protocol version (default 1).
             client_info: Client identification info.
             timeout: Timeout in seconds.
 
@@ -409,20 +409,23 @@ class AcpClient:
     async def session_prompt(
         self,
         session_id: str,
-        prompt: str,
+        prompt: str | list[dict[str, Any]],
         timeout: float | None = None,
     ) -> Any:
         """Send a prompt to an active ACP session.
 
         Args:
             session_id: The session ID.
-            prompt: The user/instruction prompt string.
+            prompt: The user/instruction prompt string or content block list.
             timeout: Timeout in seconds.
 
         Returns:
             The prompt execution result from the server.
         """
-        params = SessionPromptParams(sessionId=session_id, prompt=prompt)
+        prompt_content = (
+            [{"type": "text", "text": prompt}] if isinstance(prompt, str) else prompt
+        )
+        params = SessionPromptParams(sessionId=session_id, prompt=prompt_content)
         return await self.call("session/prompt", params, timeout=timeout)
 
     async def session_cancel(

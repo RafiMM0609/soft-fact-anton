@@ -43,7 +43,11 @@ def main() -> None:
 
         elif method == "session/prompt":
             sess_id = params.get("sessionId")
-            prompt = params.get("prompt", "")
+            raw_prompt = params.get("prompt", "")
+            if isinstance(raw_prompt, list):
+                prompt = " ".join(b.get("text", "") for b in raw_prompt if isinstance(b, dict))
+            else:
+                prompt = str(raw_prompt)
 
             # Emit notifications before returning response
             notif1 = {

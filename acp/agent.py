@@ -41,9 +41,9 @@ def parse_schema_output(text: str, schema: type[T]) -> T:
     """Parse text into the target Pydantic schema model.
 
     Handles raw JSON, markdown-wrapped JSON, CLI JSON wrapper dictionaries,
-    and embedded JSON substrings.
+    leading warning or log lines, and embedded JSON substrings.
     """
-    cleaned = clean_markdown_fences(text)
+    cleaned = clean_markdown_fences(text).strip()
 
     # 1. Direct validation from cleaned string
     try:
@@ -51,35 +51,49 @@ def parse_schema_output(text: str, schema: type[T]) -> T:
     except Exception:
         pass
 
-    # 2. Check if output is a JSON dictionary wrapper from CLI
-    try:
-        data = json.loads(cleaned)
-        if isinstance(data, dict):
-            try:
-                return schema.model_validate(data)
-            except Exception:
-                pass
-            for key in ("response", "result", "output", "text", "content"):
-                if key in data:
-                    val = data[key]
-                    if isinstance(val, dict):
-                        try:
-                            return schema.model_validate(val)
-                        except Exception:
-                            pass
-                    elif isinstance(val, str):
-                        try:
-                            return schema.model_validate_json(clean_markdown_fences(val))
-                        except Exception:
-                            pass
-    except Exception:
-        pass
-
-    # 3. Locate outer JSON object braces {...}
+    # 2. Extract JSON object even if preceded by warning/logging lines
     start = cleaned.find("{")
     end = cleaned.rfind("}")
     if start != -1 and end > start:
         candidate = cleaned[start : end + 1]
+        try:
+            data = json.loads(candidate)
+            if isinstance(data, dict):
+                # Check if it matches schema directly
+                try:
+                    return schema.model_validate(data)
+                except Exception:
+                    pass
+
+                # Check if it's a CLI wrapper with inner response/result/output
+                for key in ("structured_output", "response", "result", "output", "text", "content"):
+                    if key in data:
+                        val = data[key]
+                        if isinstance(val, dict):
+                            try:
+                                return schema.model_validate(val)
+                            except Exception:
+                                pass
+                        elif isinstance(val, str):
+                            inner_cleaned = clean_markdown_fences(val).strip()
+                            try:
+                                return schema.model_validate_json(inner_cleaned)
+                            except Exception:
+                                pass
+                            # Substring match in inner text
+                            i_start = inner_cleaned.find("{")
+                            i_end = inner_cleaned.rfind("}")
+                            if i_start != -1 and i_end > i_start:
+                                try:
+                                    return schema.model_validate_json(
+                                        inner_cleaned[i_start : i_end + 1]
+                                    )
+                                except Exception:
+                                    pass
+        except Exception:
+            pass
+
+        # Also try direct schema validation on candidate
         try:
             return schema.model_validate_json(candidate)
         except Exception:
@@ -135,7 +149,7 @@ class AcpAgent:
         cmd = print_command(
             instruction=prompt,
             schema=schema,
-            mode="auto",
+            mode=None,
             agent_name=self.agent_name,
             harness_path=self.harness_path,
             model=self.model,

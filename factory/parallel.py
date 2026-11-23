@@ -160,6 +160,26 @@ class ParallelBuilder:
             worktrees_dir.mkdir(parents=True, exist_ok=True)
 
             completed: set[str] = set()
+            if self.store and root is not None:
+                try:
+                    import subprocess
+                    proc_res = subprocess.run(
+                        ["git", "rev-list", "HEAD"],
+                        cwd=root,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    present_commits = set(proc_res.stdout.split())
+                    if hasattr(self.store, "tasks_merged_for_project"):
+                        completed.update(
+                            self.store.tasks_merged_for_project(
+                                project_id, present_commits=present_commits
+                            )
+                        )
+                except Exception as exc:
+                    logger.debug("Failed querying tasks_merged_for_project: %s", exc)
+
             if self.store and hasattr(self.store, "completed_tasks"):
                 try:
                     completed.update(self.store.completed_tasks(job_id))
