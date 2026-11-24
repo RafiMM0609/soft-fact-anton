@@ -39,7 +39,7 @@ class BuilderSettings:
     """Runtime configuration settings for ParallelBuilder."""
 
     data_dir: Path = Path("data")
-    worker_concurrency: int = 2
+    worker_concurrency: int = 1
     max_repairs: int = 3
     worker_timeout: int = 1800
     review_timeout: int = 300
@@ -88,7 +88,7 @@ class ParallelBuilder:
 
     @property
     def concurrency(self) -> int:
-        val = self._get_setting("worker_concurrency", 2)
+        val = self._get_setting("worker_concurrency", 1)
         return max(1, int(val))
 
     @property
