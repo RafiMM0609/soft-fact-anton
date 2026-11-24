@@ -177,7 +177,7 @@ class Engine:
                 # Deal design block if task has design skills
                 if dealer and deal_blocks and any("design" in s or s in ("animate", "apple-design", "break-ui", "emil-design-eng") for s in task.skills):
                     try:
-                        deal = dealer.deal(project_id, brief=brief)
+                        deal = dealer.deal(brief, seed=project_id)
                         dealt_text = deal_blocks(deal)
                         if dealt_text:
                             parts.append(f"\nDEALT DESIGN SPECIFICATION:\n{dealt_text}")

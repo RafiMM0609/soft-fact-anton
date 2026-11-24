@@ -132,15 +132,17 @@ def head_commit(root: Path) -> str:
 
 def worktree_add(root: Path, destination: Path, branch: str) -> Path:
     """Create an isolated worktree on a new branch based on current HEAD."""
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    _run(["worktree", "add", "-q", "-b", branch, str(destination)], cwd=root)
-    return destination
+    dest = Path(destination).resolve()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _run(["worktree", "add", "-q", "-b", branch, str(dest)], cwd=root)
+    return dest
 
 
 def worktree_remove(root: Path, destination: Path) -> None:
     """Safely remove a worktree and prune."""
+    dest = Path(destination).resolve()
     try:
-        _run(["worktree", "remove", "--force", str(destination)], cwd=root)
+        _run(["worktree", "remove", "--force", str(dest)], cwd=root)
     except GitError:
         pass
     try:
