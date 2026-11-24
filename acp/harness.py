@@ -283,15 +283,27 @@ def isolated_env(
         (home_path / ".cache").mkdir(parents=True, exist_ok=True, mode=0o700)
         (home_path / ".local" / "share").mkdir(parents=True, exist_ok=True, mode=0o700)
 
-        # Preserve agy/gemini CLI authentication by linking ~/.gemini into isolated HOME
+        # Preserve agy/gemini CLI authentication without leaking parent conversation history or transcripts
         real_home = Path.home()
-        real_gemini = real_home / ".gemini"
-        target_gemini = home_path / ".gemini"
-        if real_gemini.is_dir() and not target_gemini.exists():
-            try:
-                target_gemini.symlink_to(real_gemini)
-            except OSError:
-                pass
+        real_gemini_cli = real_home / ".gemini" / "antigravity-cli"
+        target_gemini_cli = home_path / ".gemini" / "antigravity-cli"
+        target_gemini_cli.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+        if real_gemini_cli.is_dir():
+            for fname in ("antigravity-oauth-token", "settings.json", "installation_id"):
+                src = real_gemini_cli / fname
+                if src.is_file():
+                    try:
+                        shutil.copy2(src, target_gemini_cli / fname)
+                    except OSError:
+                        pass
+            real_builtin = real_gemini_cli / "builtin"
+            target_builtin = target_gemini_cli / "builtin"
+            if real_builtin.is_dir() and not target_builtin.exists():
+                try:
+                    target_builtin.symlink_to(real_builtin)
+                except OSError:
+                    pass
 
         env["HOME"] = str(home_path)
         env["XDG_CONFIG_HOME"] = str(home_path / ".config")

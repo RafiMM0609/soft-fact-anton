@@ -337,7 +337,12 @@ class AcpClient:
                     logger.warning("Failed parsing notification %r: %s", line, exc)
 
         # If stdout closed while requests pending, reject them
-        err = AcpProcessError("ACP subprocess stdout closed unexpectedly")
+        exit_code = self.process.returncode if self.process else None
+        stderr_tail = "\n".join(self.stderr_lines[-20:]) if self.stderr_lines else ""
+        err_msg = f"ACP subprocess stdout closed unexpectedly (exit code {exit_code})"
+        if stderr_tail:
+            err_msg += f"\nStderr tail:\n{stderr_tail}"
+        err = AcpProcessError(err_msg)
         for fut in list(self._pending_requests.values()):
             if not fut.done():
                 fut.set_exception(err)
