@@ -270,6 +270,31 @@ def run_command(
             return 1
 
 
+def api_command(
+    port: int = 8000,
+    host: str = "127.0.0.1",
+    data_path: Path | None = None,
+) -> int:
+    """Start the ACP Software Factory FastAPI server using uvicorn."""
+    import uvicorn
+    from factory.api import create_app
+
+    settings = Settings(data=data_path.resolve() if data_path else Path("./data").resolve())
+    app = create_app(settings)
+    print(f"Starting ACP Software Factory API on http://{host}:{port}...")
+    print(f"Data directory: {settings.data}")
+    print(f"Operator token: {settings.operator_token}")
+    try:
+        uvicorn.run(app, host=host, port=port, log_level="info")
+        return 0
+    except KeyboardInterrupt:
+        print("\nAPI server shutdown.")
+        return 0
+    except Exception as exc:
+        print(f"Error starting API server: {exc}", file=sys.stderr)
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the factory CLI."""
     parser = argparse.ArgumentParser(prog="factory", description="ACP Software Factory CLI")
@@ -322,6 +347,29 @@ def main(argv: list[str] | None = None) -> int:
         help="Path to factory data directory (default: ./data)",
     )
 
+    # api
+    api_parser = subparsers.add_parser(
+        "api", help="Start the ACP Software Factory FastAPI server"
+    )
+    api_parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port to bind (default: 8000)",
+    )
+    api_parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host interface to bind to (default: 127.0.0.1)",
+    )
+    api_parser.add_argument(
+        "--data",
+        type=Path,
+        default=None,
+        help="Path to factory data directory (default: ./data)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.subcommand == "doctor":
@@ -332,6 +380,8 @@ def main(argv: list[str] | None = None) -> int:
         return build_command(args.brief, args.product, args.profile, args.data)
     elif args.subcommand == "run":
         return run_command(args.project, args.port, args.host, args.data)
+    elif args.subcommand == "api":
+        return api_command(args.port, args.host, args.data)
     else:
         parser.print_help()
         return 1

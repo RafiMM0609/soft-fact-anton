@@ -45,10 +45,27 @@ uv run factory build \
   --profile "static"
 ```
 
-### 5. Running Tests
+### 5. Preview & Serve Products
+```bash
+uv run factory run my-app --port 8080 --host 127.0.0.1
+```
+
+### 6. Start Unified FastAPI Backend Server
+```bash
+uv run factory api --port 8000 --host 127.0.0.1
+```
+Available endpoints:
+- `POST /api/build`: Trigger background autonomous build.
+- `GET /api/jobs/{id}`: Poll job status, tasks, and artifacts.
+- `GET /api/projects/{id}`: Inspect project details and history.
+- `GET /api/artifacts/{project}/{job}`: Download packaged `.tar.gz` bundle.
+- `POST /api/jobs/{id}/cancel`: Request build job cancellation.
+- `GET /health` & `GET /api/doctor`: Diagnostics and health checks.
+
+### 7. Running Tests
 ```bash
 uv run pytest -v
-uv run ruff check acp factory tests
+uv run ruff check .
 ```
 
 ---
@@ -60,6 +77,8 @@ uv run ruff check acp factory tests
 - `acp/harness.py`: Local harness resolution (`agy`, `codex`, `pi`, `claude`), command builders, and safe environment isolation.
 - `acp/agent.py`: `AcpAgent` for structured, schema-validated single-turn calls (Planner, Reviewer).
 - `acp/worker.py`: `AcpWorker` running code implementations confined to Git worktrees.
+- `factory/api.py`: FastAPI REST API service for remote job orchestration and artifact downloads.
+- `factory/artifact.py`: Clean distribution packaging, sha256 digests, and automatic README generation.
 - `factory/models.py`: DAG `Task`, `Plan`, `AcceptanceFlow`, and `Review` models.
 - `factory/products.py`: Git repository initialization, worktree lifecycle, commit, diff, and merge operations.
 - `factory/parallel.py`: Wave scheduling, parallel frontier execution, wave barrier, and sequential merging.
@@ -69,4 +88,5 @@ uv run ruff check acp factory tests
 - `factory/testing.py`: HTTP API & Playwright acceptance flow tester.
 - `factory/db.py`: SQLite ledger for durable job and task tracking.
 - `factory/engine.py`: End-to-end orchestration pipeline.
-- `factory/cli.py`: Command-line interface.
+- `factory/cli.py`: Command-line interface (`doctor`, `init`, `build`, `run`, `api`).
+- `checks/secret_scan.py`: Security gate scanning for leaked tokens and private keys before release.
