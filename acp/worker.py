@@ -72,8 +72,20 @@ class AcpWorker:
         skills: tuple[str, ...] | list[str],
         worktree_path: Path | None = None,
     ) -> str:
+        prompt_parts = [
+            "You are an expert autonomous software engineer working strictly within this project repository.",
+            "IMPORTANT OPERATIONAL CONSTRAINTS:",
+            "- Work strictly inside the current workspace (current working directory). Never explore, inspect, or query parent directories ('..') or external databases.",
+            "- Inspect existing files in this workspace to understand conventions, structure, and styling.",
+            "- Implement all requirements and acceptance criteria directly by creating or editing files in the workspace.",
+            "- Ensure all code, styles, and assets are cleanly written and saved in this directory.",
+            "",
+            instruction,
+        ]
+        base_prompt = "\n".join(prompt_parts)
+
         if not skills:
-            return instruction
+            return base_prompt
 
         skills_sections: list[str] = []
         for skill in skills:
@@ -99,7 +111,7 @@ class AcpWorker:
                 except Exception as exc:
                     logger.debug("Could not copy skill %s to worktree: %s", skill, exc)
 
-        return instruction + "".join(skills_sections)
+        return base_prompt + "".join(skills_sections)
 
     def run_task(
         self,

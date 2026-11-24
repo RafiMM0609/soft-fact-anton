@@ -336,8 +336,12 @@ class ParallelBuilder:
                                 self.store.set_task_state(
                                     job_id, t.id, "failed", {"error": str(outcome.error)}
                                 )
+                            out_tail = ""
+                            if hasattr(outcome.error, "output") and outcome.error.output:
+                                lines = outcome.error.output.strip().splitlines()
+                                out_tail = "\nWorker output tail:\n" + "\n".join(lines[-15:])
                             raise ParallelBuildError(
-                                f"Task '{t.id}' failed after {attempts[t.id]} attempts: {outcome.error}"
+                                f"Task '{t.id}' failed after {attempts[t.id]} attempts: {outcome.error}{out_tail}"
                             )
 
                         repair_feedbacks[t.id] = format_repair_feedback(

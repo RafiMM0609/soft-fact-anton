@@ -337,6 +337,11 @@ class AcpClient:
                     logger.warning("Failed parsing notification %r: %s", line, exc)
 
         # If stdout closed while requests pending, reject them
+        if self.process:
+            try:
+                await asyncio.wait_for(self.process.wait(), timeout=1.0)
+            except Exception:
+                pass
         exit_code = self.process.returncode if self.process else None
         stderr_tail = "\n".join(self.stderr_lines[-20:]) if self.stderr_lines else ""
         err_msg = f"ACP subprocess stdout closed unexpectedly (exit code {exit_code})"

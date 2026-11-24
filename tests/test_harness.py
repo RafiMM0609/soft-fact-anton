@@ -335,7 +335,7 @@ def test_acp_worker_with_mock_acp_server(tmp_path: Path) -> None:
 
     assert "Analyzing prompt..." in log
     assert "Execution finished." in log
-    assert "Executed: Refactor database layer" in log
+    assert "Executed:" in log and "Refactor database layer" in log
 
 
 def test_acp_worker_nonexistent_worktree(tmp_path: Path) -> None:

@@ -305,6 +305,21 @@ def isolated_env(
                 except OSError:
                     pass
 
+        # Preserve agy/gemini CLI project configs (e.g. default-cli-project.json)
+        real_gemini_config = real_home / ".gemini" / "config"
+        if real_gemini_config.is_dir():
+            target_gemini_config = home_path / ".gemini" / "config"
+            target_gemini_config.mkdir(parents=True, exist_ok=True, mode=0o700)
+            real_projects = real_gemini_config / "projects"
+            if real_projects.is_dir():
+                target_projects = target_gemini_config / "projects"
+                target_projects.mkdir(parents=True, exist_ok=True, mode=0o700)
+                for pjson in real_projects.glob("*.json"):
+                    try:
+                        shutil.copy2(pjson, target_projects / pjson.name)
+                    except OSError:
+                        pass
+
         env["HOME"] = str(home_path)
         env["XDG_CONFIG_HOME"] = str(home_path / ".config")
         env["XDG_CACHE_HOME"] = str(home_path / ".cache")
