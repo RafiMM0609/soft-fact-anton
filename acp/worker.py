@@ -245,6 +245,14 @@ class AcpWorker:
             except AcpWorkerError:
                 raise
             except Exception as exc:
+                try:
+                    for logf in temp_home.glob("**/*.log"):
+                        if logf.stat().st_size > 0:
+                            target_log = Path("data/logs") / logf.name
+                            target_log.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(logf, target_log)
+                except Exception:
+                    pass
                 out = getattr(exc, "output", "")
                 raise AcpWorkerError(f"Worker execution failed: {exc}", output=out) from exc
 

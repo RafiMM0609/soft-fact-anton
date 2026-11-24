@@ -82,6 +82,7 @@ class AcpClient:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self.cwd,
                 env=self.env,
+                limit=16 * 1024 * 1024,
             )
         except Exception as exc:
             raise AcpProcessError(f"Failed to start ACP process {self.command}: {exc}") from exc
@@ -289,10 +290,13 @@ class AcpClient:
     async def _stdout_loop(self) -> None:
         """Continuously read line-delimited JSON messages from subprocess stdout."""
         assert self.process is not None and self.process.stdout is not None
+        read_error: Exception | None = None
         while not self._closed:
             try:
                 line_bytes = await self.process.stdout.readline()
-            except Exception:
+            except Exception as exc:
+                read_error = exc
+                logger.error("Exception reading ACP stdout line: %s", exc)
                 break
 
             if not line_bytes:
@@ -345,6 +349,8 @@ class AcpClient:
         exit_code = self.process.returncode if self.process else None
         stderr_tail = "\n".join(self.stderr_lines[-20:]) if self.stderr_lines else ""
         err_msg = f"ACP subprocess stdout closed unexpectedly (exit code {exit_code})"
+        if read_error is not None:
+            err_msg += f" [Read error: {read_error}]"
         if stderr_tail:
             err_msg += f"\nStderr tail:\n{stderr_tail}"
         err = AcpProcessError(err_msg)
