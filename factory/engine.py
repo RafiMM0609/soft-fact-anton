@@ -16,6 +16,7 @@ from factory.parallel import ParallelBuilder
 from factory.products import ensure_repo, head_commit
 from factory.testing import Tester
 from factory.verifier import Verifier
+from factory.artifact import assemble_artifact
 
 try:
     from factory.design import DesignDealer, deal_blocks
@@ -213,8 +214,22 @@ class Engine:
             else:
                 test_results = []
 
-            # 5. Commit artifact digest and mark job succeeded
+            # 5. Assemble release artifact bundle and mark job succeeded
             commit_sha = head_commit(root)
+            tarball_path = self.settings.data / "artifacts" / project_id / f"{job_id}.tar.gz"
+            profile = (
+                project.get("profile", "static")
+                if isinstance(project, dict)
+                else getattr(project, "profile", "static")
+            )
+            tar_info = assemble_artifact(
+                source_root=root,
+                output_tarball=tarball_path,
+                project=project,
+                plan=active_plan,
+                profile=profile,
+            )
+
             artifact = {
                 "project_id": project_id,
                 "job_id": job_id,
@@ -222,6 +237,9 @@ class Engine:
                 "tasks_completed": completed_tasks,
                 "verification": verifier_msg,
                 "test_results": test_results,
+                "artifact_path": tar_info["artifact_path"],
+                "digest": tar_info["digest"],
+                "size_bytes": tar_info["size_bytes"],
                 "finished_at": time.time(),
                 "status": "succeeded",
             }

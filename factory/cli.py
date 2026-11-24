@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import functools
+import http.server
 import json
 import logging
 import os
@@ -10,7 +12,9 @@ from pathlib import Path
 import secrets
 import shutil
 import sqlite3
+import subprocess
 import sys
+import threading
 import time
 
 from factory.config import Settings
@@ -163,6 +167,109 @@ def build_command(
         return 1
 
 
+def run_command(
+    project: str,
+    port: int = 8080,
+    host: str = "127.0.0.1",
+    data_path: Path | None = None,
+    stop_event: threading.Event | None = None,
+) -> int:
+    """Serve or preview a product locally.
+
+    Detects project type (Go, Zig, Node, or static HTML/JS/CSS) and binds
+    to host:port.
+    """
+    settings = Settings(data=data_path.resolve() if data_path else Path("./data").resolve())
+
+    # 1. Resolve product directory
+    project_dir = settings.products_dir / project
+    if not project_dir.is_dir():
+        direct_dir = Path(project).resolve()
+        if direct_dir.is_dir():
+            project_dir = direct_dir
+        else:
+            print(f"Error: Product directory not found: {project_dir}", file=sys.stderr)
+            return 1
+
+    print(f"Serving product '{project}' from: {project_dir}")
+    print(f"URL: http://{host}:{port}")
+
+    # 2. Check for backend profiles
+    if (project_dir / "go.mod").is_file():
+        env = os.environ.copy()
+        env.update({"HOST": host, "PORT": str(port)})
+        print(f"Starting Go backend on http://{host}:{port} (PORT={port})...")
+        try:
+            cmd = ["go", "run", "."]
+            proc = subprocess.run(cmd, cwd=project_dir, env=env)
+            return proc.returncode
+        except KeyboardInterrupt:
+            print("\nShutting down server...")
+            return 0
+        except Exception as exc:
+            print(f"Error running Go backend: {exc}", file=sys.stderr)
+            return 1
+
+    elif (project_dir / "build.zig").is_file():
+        env = os.environ.copy()
+        env.update({"HOST": host, "PORT": str(port)})
+        print(f"Starting Zig backend on http://{host}:{port} (PORT={port})...")
+        try:
+            cmd = ["zig", "build", "run"]
+            proc = subprocess.run(cmd, cwd=project_dir, env=env)
+            return proc.returncode
+        except KeyboardInterrupt:
+            print("\nShutting down server...")
+            return 0
+        except Exception as exc:
+            print(f"Error running Zig backend: {exc}", file=sys.stderr)
+            return 1
+
+    elif (project_dir / "package.json").is_file():
+        env = os.environ.copy()
+        env.update({"HOST": host, "PORT": str(port)})
+        print(f"Starting Node project on http://{host}:{port} (PORT={port})...")
+        try:
+            cmd = ["npm", "start"]
+            proc = subprocess.run(cmd, cwd=project_dir, env=env)
+            return proc.returncode
+        except KeyboardInterrupt:
+            print("\nShutting down server...")
+            return 0
+        except Exception as exc:
+            print(f"Error running Node project: {exc}", file=sys.stderr)
+            return 1
+
+    else:
+        # Default / Static web project (e.g. index.html)
+        handler = functools.partial(
+            http.server.SimpleHTTPRequestHandler,
+            directory=str(project_dir),
+        )
+
+        class FactoryHTTPServer(http.server.ThreadingHTTPServer):
+            allow_reuse_address = True
+
+        try:
+            with FactoryHTTPServer((host, port), handler) as httpd:
+                print(f"Static web server started on http://{host}:{port} (Press Ctrl+C to stop)")
+                if stop_event is not None:
+                    def _watcher() -> None:
+                        stop_event.wait()
+                        httpd.shutdown()
+
+                    threading.Thread(target=_watcher, daemon=True).start()
+
+                httpd.serve_forever()
+            return 0
+        except KeyboardInterrupt:
+            print("\nShutting down server...")
+            return 0
+        except Exception as exc:
+            print(f"Error serving product: {exc}", file=sys.stderr)
+            return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the factory CLI."""
     parser = argparse.ArgumentParser(prog="factory", description="ACP Software Factory CLI")
@@ -187,6 +294,34 @@ def main(argv: list[str] | None = None) -> int:
     build_parser.add_argument("--profile", type=str, default="static", help="Product profile type")
     build_parser.add_argument("--data", type=Path, default=None, help="Path to data directory")
 
+    # run
+    run_parser = subparsers.add_parser(
+        "run", help="Serve or preview a product's build output or static assets"
+    )
+    run_parser.add_argument(
+        "project",
+        type=str,
+        help="Project name or directory path to run (e.g. kopi-senja)",
+    )
+    run_parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port to serve on (default: 8080)",
+    )
+    run_parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host interface to bind to (default: 127.0.0.1)",
+    )
+    run_parser.add_argument(
+        "--data",
+        type=Path,
+        default=None,
+        help="Path to factory data directory (default: ./data)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.subcommand == "doctor":
@@ -195,6 +330,8 @@ def main(argv: list[str] | None = None) -> int:
         return init_command(args.data)
     elif args.subcommand == "build":
         return build_command(args.brief, args.product, args.profile, args.data)
+    elif args.subcommand == "run":
+        return run_command(args.project, args.port, args.host, args.data)
     else:
         parser.print_help()
         return 1

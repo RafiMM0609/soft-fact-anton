@@ -6,6 +6,8 @@ import logging
 from pathlib import Path
 import subprocess
 
+from checks.secret_scan import scan_directory
+
 logger = logging.getLogger(__name__)
 
 # Bounded output tail to prevent high memory consumption or log explosion
@@ -73,6 +75,15 @@ class Verifier:
             Tuple of (success: bool, report: str).
         """
         root_path = Path(root).resolve()
+
+        # Security gate: verify no sensitive secrets or tokens are leaked in repo
+        secret_findings = scan_directory(root_path)
+        if secret_findings:
+            err_lines = [f"- {f.file_path}: [{f.rule}] {f.detail}" for f in secret_findings]
+            err = "Security check failed: Leaked secret(s) detected:\n" + "\n".join(err_lines)
+            logger.error(err)
+            return False, err
+
         cmds = commands or []
 
         if not cmds:
