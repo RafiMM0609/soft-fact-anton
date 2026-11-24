@@ -168,7 +168,18 @@ class AcpWorker:
                 def handle_notification(notif: JsonRpcNotification) -> None:
                     params = notif.params
                     if isinstance(params, dict):
-                        delta = params.get("delta") or params.get("content") or params.get("message")
+                        update = params.get("update")
+                        delta = None
+                        if isinstance(update, dict):
+                            content = update.get("content")
+                            if isinstance(content, dict):
+                                delta = content.get("text")
+                            elif isinstance(content, str):
+                                delta = content
+                            elif "sessionUpdate" in update:
+                                delta = f"[{update['sessionUpdate']}]"
+                        if not delta:
+                            delta = params.get("delta") or params.get("content") or params.get("message")
                         status = params.get("status")
                         if delta:
                             line = f"[{status}] {delta}" if status else str(delta)
