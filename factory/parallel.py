@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 import shutil
 import threading
+import time
 from typing import Any, Callable
 
 from acp.agent import AcpAgent
@@ -40,9 +41,9 @@ class BuilderSettings:
 
     data_dir: Path = Path("data")
     worker_concurrency: int = 1
-    max_repairs: int = 3
+    max_repairs: int = 5
     worker_timeout: int = 1800
-    review_timeout: int = 300
+    review_timeout: int = 600
 
 
 @dataclass
@@ -93,7 +94,7 @@ class ParallelBuilder:
 
     @property
     def max_repairs(self) -> int:
-        val = self._get_setting("max_repairs", 3)
+        val = self._get_setting("max_repairs", 5)
         return max(1, int(val))
 
     @property
@@ -102,7 +103,7 @@ class ParallelBuilder:
 
     @property
     def review_timeout(self) -> int:
-        return int(self._get_setting("review_timeout", 300))
+        return int(self._get_setting("review_timeout", 600))
 
     def build_tasks(
         self,
@@ -369,24 +370,36 @@ class ParallelBuilder:
                         "task_id": t.id,
                         "attempt": attempts[t.id],
                     }
-                    try:
-                        if review_for is not None:
-                            rev = review_for(t, outcome.diff, base_ctx)
-                        else:
-                            rev = review_diff(
-                                self.agent,
-                                t,
-                                outcome.diff,
-                                base_context=base_ctx,
-                                timeout=self.review_timeout,
-                                cancelled=is_cancelled,
+                    rev: Review | None = None
+                    for review_attempt in range(2):
+                        try:
+                            if review_for is not None:
+                                rev = review_for(t, outcome.diff, base_ctx)
+                            else:
+                                rev = review_diff(
+                                    self.agent,
+                                    t,
+                                    outcome.diff,
+                                    base_context=base_ctx,
+                                    timeout=self.review_timeout,
+                                    cancelled=is_cancelled,
+                                )
+                            break
+                        except Exception as exc:
+                            logger.warning(
+                                "Diff review attempt %d for task %s failed with exception: %s",
+                                review_attempt + 1,
+                                t.id,
+                                exc,
                             )
-                    except Exception as exc:
-                        rev = Review(
-                            decision="rejected",
-                            findings=[f"Review generation error: {exc}"],
-                            confidence=0.0,
-                        )
+                            if review_attempt == 0:
+                                time.sleep(1)
+                                continue
+                            rev = Review(
+                                decision="rejected",
+                                findings=[f"Review generation error: {exc}"],
+                                confidence=0.0,
+                            )
 
                     # Check review verdict
                     if not rev.approved:

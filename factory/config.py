@@ -44,16 +44,16 @@ class Settings:
         default_factory=lambda: int(os.getenv("FACTORY_WORKER_CONCURRENCY", "1"))
     )
     max_repairs: int = field(
-        default_factory=lambda: int(os.getenv("FACTORY_MAX_REPAIRS", "3"))
+        default_factory=lambda: int(os.getenv("FACTORY_MAX_REPAIRS", "5"))
     )
     agent_timeout: int = field(
-        default_factory=lambda: int(os.getenv("FACTORY_AGENT_TIMEOUT", "300"))
+        default_factory=lambda: int(os.getenv("FACTORY_AGENT_TIMEOUT", "600"))
     )
     worker_timeout: int = field(
         default_factory=lambda: int(os.getenv("FACTORY_WORKER_TIMEOUT", "1800"))
     )
     review_timeout: int = field(
-        default_factory=lambda: int(os.getenv("FACTORY_REVIEW_TIMEOUT", "300"))
+        default_factory=lambda: int(os.getenv("FACTORY_REVIEW_TIMEOUT", "600"))
     )
     operator_token: str | None = None
 

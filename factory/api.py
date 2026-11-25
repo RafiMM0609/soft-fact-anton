@@ -111,14 +111,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 row = store.one("SELECT cancel FROM jobs WHERE id=?", (job_id,))
                 return bool(row.get("cancel", 0) == 1)
 
-            # Mark job running and claimed
+            # Mark job running and started
+            now = time.time()
             with store.tx() as db:
                 db.execute(
-                    "UPDATE jobs SET state='running', claimed=? WHERE id=?",
-                    (time.time(), job_id),
+                    "UPDATE jobs SET state='running', started=?, heartbeat=? WHERE id=?",
+                    (now, now, job_id),
                 )
                 db.execute("UPDATE projects SET state='building' WHERE id=?", (project_id,))
-                store.event_tx(db, project_id, job_id, "job.claimed", {"lane": "build"})
+                store.event_tx(db, project_id, job_id, "job.started", {"lane": "build"})
 
             logger.info("Starting background build for project %s (job %s)", project_id, job_id)
             await asyncio.to_thread(
@@ -179,12 +180,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not row:
             raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
 
-        artifact_data = None
-        if row.get("artifact"):
+        result_data = None
+        raw_result = row.get("result") or row.get("artifact")
+        if raw_result:
             try:
-                artifact_data = json.loads(row["artifact"])
+                result_data = json.loads(raw_result)
             except Exception:
-                artifact_data = row["artifact"]
+                result_data = raw_result
 
         payload_data = None
         if row.get("payload"):
@@ -201,12 +203,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "kind": row["kind"],
             "state": row["state"],
             "created": row["created"],
-            "claimed": row.get("claimed"),
+            "started": row.get("started"),
             "finished": row.get("finished"),
             "cancel": bool(row.get("cancel", 0)),
             "error": row.get("error"),
             "payload": payload_data,
-            "artifact": artifact_data,
+            "result": result_data,
+            "artifact": result_data,
             "tasks": tasks,
         }
 
