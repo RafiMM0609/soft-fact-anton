@@ -109,6 +109,32 @@
 
           <div id="d-pipeline" class="pipeline"></div>
 
+          <!-- Adjust / Incremental Feature Panel -->
+          <div class="card" style="display:grid;gap:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+              <div>
+                <div class="eyebrow">ADJUST AFTER BUILD</div>
+                <h2 style="margin:2px 0 0;">Revisi / Tambah Fitur</h2>
+              </div>
+              <span class="mono" style="color:var(--muted);">Cek hierarki domain dulu sebelum eksekusi</span>
+            </div>
+            <form id="adjust-preview-form" style="display:grid;gap:10px;">
+              <textarea id="adj-instruction" rows="2" required placeholder="Misal: Ubah form input tambah acara agar ada pilihan kapasitas peserta..."></textarea>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <button id="adj-preview-btn" class="secondary" type="submit">Cek Scope Domain →</button>
+                <span id="adj-status" class="mono" style="color:var(--muted);"></span>
+              </div>
+            </form>
+            <div id="adj-scope-box" hidden style="display:grid;gap:10px;padding-top:6px;border-top:1px solid var(--border);">
+              <div class="mono" style="color:var(--accent-hover);">Pilih modul / hierarki domain yang dimaksud:</div>
+              <div id="adj-candidates" style="display:grid;gap:8px;"></div>
+              <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button id="adj-cancel-btn" class="quiet" type="button">Batal</button>
+                <button id="adj-confirm-btn" class="primary" type="button">Konfirmasi &amp; Jalankan Adjust</button>
+              </div>
+            </div>
+          </div>
+
           <div class="grid-2">
             <div class="card">
               <h2>Riwayat Job &amp; Token</h2>

@@ -120,6 +120,21 @@ class Plan(StrictModel):
             if task.id not in done and all(dep in done for dep in task.depends_on)
         ]
 
+
+class DomainCandidate(StrictModel):
+    """A high-level domain/module candidate affected by an adjustment request."""
+
+    domain_path: str = Field(min_length=2, max_length=160)
+    reason: str = Field(default="", max_length=400)
+    target_files: list[str] = Field(default_factory=list, max_length=15)
+
+
+class AdjustScope(StrictModel):
+    """Lightweight domain-hierarchy preview before planning an incremental adjustment."""
+
+    summary: str = Field(default="", max_length=600)
+    candidates: list[DomainCandidate] = Field(min_length=1, max_length=6)
+
     def ordered_tasks(self) -> list[Task]:
         by_id = {task.id: task for task in self.tasks}
         return [by_id[name] for name in self.execution_order()]

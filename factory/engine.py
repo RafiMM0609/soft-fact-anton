@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 import time
 from typing import Any, Callable
 
@@ -11,7 +12,7 @@ from acp.agent import AcpAgent
 from acp.worker import AcpWorker
 from factory.config import Settings
 from factory.db import Store
-from factory.models import Plan, Task
+from factory.models import AcceptanceFlow, AdjustScope, Plan, Task
 from factory.parallel import ParallelBuilder
 from factory.products import ensure_repo, head_commit
 from factory.testing import Tester, run_product_server
@@ -105,6 +106,180 @@ class Engine:
 
         return plan
 
+    def _repo_files(self, root: Path, limit: int = 150) -> list[str]:
+        """Collect relative file paths in the repository, excluding build/vcs noise."""
+        skip = {".git", "vendor", "node_modules", ".venv", "__pycache__", "data"}
+        files: list[str] = []
+        if not root.is_dir():
+            return files
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(root)
+            if any(part in skip for part in rel.parts):
+                continue
+            files.append(str(rel))
+            if len(files) >= limit:
+                break
+        return files
+
+    def preview_adjust_scope(self, project: Any, instruction: str) -> AdjustScope:
+        """Identify concise domain hierarchy candidates affected by an adjustment request."""
+        project_id = (
+            project["id"] if isinstance(project, dict) else getattr(project, "id", str(project))
+        )
+        profile = (
+            project.get("profile", "static")
+            if isinstance(project, dict)
+            else getattr(project, "profile", "static")
+        )
+        root = ensure_repo(self.settings.data, project_id)
+        repo_files = self._repo_files(root)
+
+        prompt = (
+            "You are the Domain Scope Classifier in an automated software factory.\n"
+            "Given an existing project's file list and the user's adjustment request, identify 1 to 4 "
+            "high-level domain hierarchy paths (e.g. 'User > Form Input Data Detail User' or "
+            "'Acara > Halaman Admin Tambah Acara') that match what the user wants to change.\n"
+            "If the request could plausibly apply to multiple modules, list each candidate separately "
+            "so the user can pick the right one before coding starts. Do NOT generate tasks."
+        )
+        ctx = {
+            "project_id": project_id,
+            "profile": profile,
+            "adjustment_instruction": instruction,
+            "repo_files": repo_files,
+        }
+        return self.agent.generate(
+            role="Domain Scope Classifier",
+            instruction=prompt,
+            context=ctx,
+            schema=AdjustScope,
+            timeout=self.settings.agent_timeout,
+        )
+
+    def plan_adjust(
+        self,
+        project: Any,
+        instruction: str,
+        selected_domains: list[str],
+        target_files: list[str] | None = None,
+        cancelled: Callable[[], bool] = lambda: False,
+    ) -> Plan:
+        """Generate an incremental delta Plan merged onto the existing project Plan."""
+        project_id = (
+            project["id"] if isinstance(project, dict) else getattr(project, "id", str(project))
+        )
+        profile = (
+            project.get("profile", "static")
+            if isinstance(project, dict)
+            else getattr(project, "profile", "static")
+        )
+        root = ensure_repo(self.settings.data, project_id)
+        repo_files = self._repo_files(root)
+
+        existing_plan: Plan | None = None
+        plan_json = (
+            project.get("plan") if isinstance(project, dict) else getattr(project, "plan", None)
+        )
+        if plan_json:
+            try:
+                existing_plan = Plan.model_validate_json(plan_json)
+            except Exception:
+                existing_plan = None
+
+        adjust_prompt = (
+            f"{PLANNER_PROMPT}\n"
+            "INCREMENTAL ADJUSTMENT RULES:\n"
+            "- This is an incremental adjustment on an EXISTING codebase.\n"
+            "- ONLY plan tasks needed to implement the requested adjustment within the confirmed "
+            "domain scope and target files.\n"
+            "- Do NOT recreate or delete unrelated existing features.\n"
+            "- Keep existing behaviour intact and add regression/acceptance flows for the change."
+        )
+        ctx: dict[str, Any] = {
+            "project_id": project_id,
+            "profile": profile,
+            "adjustment_instruction": instruction,
+            "confirmed_domains": selected_domains,
+            "target_files": target_files or [],
+            "repo_files": repo_files,
+            "existing_summary": existing_plan.summary if existing_plan else "",
+        }
+        delta = self.agent.generate(
+            role="Adjustment Planner",
+            instruction=adjust_prompt,
+            context=ctx,
+            schema=Plan,
+            timeout=self.settings.agent_timeout,
+            cancelled=cancelled,
+        )
+
+        if existing_plan is None:
+            return delta
+
+        existing_ids = {t.id for t in existing_plan.tasks}
+        id_map: dict[str, str] = {}
+        mapped_tasks: list[Task] = []
+        for task in delta.tasks:
+            tid = task.id
+            candidate = tid if tid not in existing_ids and tid not in id_map.values() else f"adj-{tid}"[:48]
+            counter = 1
+            while candidate in existing_ids or candidate in id_map.values():
+                candidate = f"adj-{tid[:36]}-{counter}"[:48]
+                counter += 1
+            id_map[tid] = candidate
+
+        for task in delta.tasks:
+            new_id = id_map[task.id]
+            remapped_deps = [id_map.get(d, d) for d in task.depends_on]
+            valid_targets = existing_ids | set(id_map.values())
+            valid_deps = [d for d in remapped_deps if d in valid_targets and d != new_id]
+            mapped_tasks.append(
+                Task(
+                    id=new_id,
+                    title=task.title,
+                    instructions=task.instructions,
+                    acceptance=task.acceptance,
+                    depends_on=valid_deps,
+                    skills=task.skills,
+                )
+            )
+
+        existing_flow_ids = {f.id for f in existing_plan.test_flows}
+        mapped_flows: list[AcceptanceFlow] = []
+        for flow in delta.test_flows:
+            fid = flow.id
+            if fid in existing_flow_ids or any(f.id == fid for f in mapped_flows):
+                fid = f"adj-{flow.id}"[:48]
+                counter = 1
+                while fid in existing_flow_ids or any(f.id == fid for f in mapped_flows):
+                    fid = f"adj-{flow.id[:36]}-{counter}"[:48]
+                    counter += 1
+            mapped_flows.append(
+                AcceptanceFlow(
+                    id=fid,
+                    kind=flow.kind,
+                    goal=flow.goal,
+                    steps=flow.steps,
+                    selectors=flow.selectors,
+                )
+            )
+
+        scope_label = ", ".join(selected_domains) if selected_domains else "custom"
+        combined_summary = (
+            f"{existing_plan.summary}\n\n[Adjust ({scope_label})]: {instruction}\n{delta.summary}"
+        )[:12000]
+
+        return Plan(
+            summary=combined_summary,
+            assumptions=list(dict.fromkeys(existing_plan.assumptions + delta.assumptions))[:50],
+            questions=[],
+            tasks=list(existing_plan.tasks) + mapped_tasks,
+            pages=list(dict.fromkeys((existing_plan.pages or []) + (delta.pages or [])))[:20],
+            test_flows=(list(existing_plan.test_flows) + mapped_flows)[:20],
+        )
+
     def build(
         self,
         project: dict[str, Any] | Any,
@@ -137,7 +312,28 @@ class Engine:
 
         try:
             # 1. Resolve or generate plan
+            job_payload: dict[str, Any] = {}
+            raw_payload = job.get("payload") if isinstance(job, dict) else getattr(job, "payload", None)
+            if isinstance(raw_payload, dict):
+                job_payload = raw_payload
+            elif isinstance(raw_payload, str) and raw_payload.strip():
+                try:
+                    parsed_p = json.loads(raw_payload)
+                    if isinstance(parsed_p, dict):
+                        job_payload = parsed_p
+                except Exception:
+                    pass
+
             active_plan = plan
+            if active_plan is None and job_payload.get("mode") == "adjust":
+                active_plan = self.plan_adjust(
+                    project=project,
+                    instruction=str(job_payload.get("instruction", "")),
+                    selected_domains=list(job_payload.get("selected_domains") or []),
+                    target_files=list(job_payload.get("target_files") or []),
+                    cancelled=cancelled,
+                )
+
             if active_plan is None:
                 plan_json = (
                     project.get("plan")

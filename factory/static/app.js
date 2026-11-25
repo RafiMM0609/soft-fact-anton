@@ -5,6 +5,7 @@ let currentTab = "overview";
 let selectedProjectId = null;
 let selectedJobId = null;
 let pollTimer = null;
+let lastAdjustPreview = null;
 
 const getToken = () => localStorage.getItem(TOKEN_KEY) || "";
 const setToken = (t) => localStorage.setItem(TOKEN_KEY, t.trim());
@@ -215,6 +216,86 @@ async function loadProjectDetail(projectId) {
     await refreshWorkspace();
   };
 }
+
+$("adjust-preview-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!selectedProjectId) return;
+  const instruction = $("adj-instruction").value.trim();
+  if (!instruction) return;
+  $("adj-status").textContent = "Menganalisis scope domain...";
+  $("adj-preview-btn").disabled = true;
+  try {
+    const data = await apiFetch(`/api/projects/${encodeURIComponent(selectedProjectId)}/adjust/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instruction }),
+    });
+    lastAdjustPreview = { instruction, candidates: data.candidates || [] };
+    $("adj-candidates").innerHTML = lastAdjustPreview.candidates.map((c, idx) => `
+      <label class="row" style="align-items:flex-start;cursor:pointer;">
+        <input type="checkbox" class="adj-cand-cb" data-idx="${idx}" ${idx === 0 ? "checked" : ""} style="margin-top:4px;" />
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;">${esc(c.domain_path)}</div>
+          <div class="mono" style="color:var(--muted);">${esc(c.reason)}</div>
+          ${c.target_files && c.target_files.length ? `<div class="mono" style="color:var(--accent-hover);margin-top:2px;">Files: ${esc(c.target_files.join(", "))}</div>` : ""}
+        </div>
+      </label>
+    `).join("");
+    $("adj-scope-box").hidden = false;
+    $("adj-status").textContent = `${lastAdjustPreview.candidates.length} kandidat domain ditemukan.`;
+  } catch (err) {
+    $("adj-status").textContent = `Gagal cek scope: ${err.message}`;
+  } finally {
+    $("adj-preview-btn").disabled = false;
+  }
+});
+
+$("adj-cancel-btn").addEventListener("click", () => {
+  $("adj-scope-box").hidden = true;
+  $("adj-status").textContent = "";
+  lastAdjustPreview = null;
+});
+
+$("adj-confirm-btn").addEventListener("click", async () => {
+  if (!selectedProjectId || !lastAdjustPreview) return;
+  const selectedDomains = [];
+  const targetFiles = [];
+  document.querySelectorAll(".adj-cand-cb:checked").forEach((cb) => {
+    const cand = lastAdjustPreview.candidates[Number(cb.dataset.idx)];
+    if (cand) {
+      selectedDomains.push(cand.domain_path);
+      for (const f of (cand.target_files || [])) {
+        if (!targetFiles.includes(f)) targetFiles.push(f);
+      }
+    }
+  });
+  if (!selectedDomains.length) {
+    $("adj-status").textContent = "Pilih minimal 1 domain scope.";
+    return;
+  }
+  $("adj-confirm-btn").disabled = true;
+  $("adj-status").textContent = "Menjalankan adjust build...";
+  try {
+    const res = await apiFetch(`/api/projects/${encodeURIComponent(selectedProjectId)}/adjust`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instruction: lastAdjustPreview.instruction,
+        selected_domains: selectedDomains,
+        target_files: targetFiles,
+      }),
+    });
+    $("adj-scope-box").hidden = true;
+    $("adj-instruction").value = "";
+    $("adj-status").textContent = `Job adjust dimulai: ${res.job_id.slice(0, 12)}`;
+    selectedJobId = res.job_id;
+    await refreshWorkspace();
+  } catch (err) {
+    $("adj-status").textContent = `Gagal memulai adjust: ${err.message}`;
+  } finally {
+    $("adj-confirm-btn").disabled = false;
+  }
+});
 
 window.inspectJob = async (jobId) => {
   selectedJobId = jobId;

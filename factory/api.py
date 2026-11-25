@@ -33,6 +33,16 @@ class BuildRequest(BaseModel):
     profile: str = Field("static", description="Product profile type (static, go-htmx, etc.)")
 
 
+class AdjustPreviewRequest(BaseModel):
+    instruction: str = Field(..., min_length=3, description="Requested adjustment instruction")
+
+
+class AdjustRequest(BaseModel):
+    instruction: str = Field(..., min_length=3, description="Requested adjustment instruction")
+    selected_domains: list[str] = Field(default_factory=list, description="Confirmed domain paths")
+    target_files: list[str] = Field(default_factory=list, description="Target files from preview")
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Create and configure the FastAPI application."""
     if settings is None:
@@ -340,6 +350,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "plan": plan_data,
             "artifact": artifact_data,
             "recent_jobs": jobs,
+        }
+
+    @app.post("/api/projects/{project_id}/adjust/preview")
+    async def preview_adjust(
+        project_id: str,
+        req: AdjustPreviewRequest,
+        _auth: str = Depends(require_operator_auth),
+    ) -> dict[str, Any]:
+        """Classify affected domain hierarchy paths before planning an adjustment."""
+        try:
+            proj = store.project(project_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
+
+        scope = await asyncio.to_thread(engine.preview_adjust_scope, proj, req.instruction)
+        return scope.model_dump()
+
+    @app.post("/api/projects/{project_id}/adjust", status_code=status.HTTP_202_ACCEPTED)
+    async def trigger_adjust(
+        project_id: str,
+        req: AdjustRequest,
+        _auth: str = Depends(require_operator_auth),
+    ) -> dict[str, Any]:
+        """Queue an incremental adjustment build scoped to confirmed domain paths."""
+        try:
+            proj = store.project(project_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
+
+        payload = {
+            "mode": "adjust",
+            "instruction": req.instruction,
+            "selected_domains": req.selected_domains,
+            "target_files": req.target_files,
+            "profile": proj.get("profile", "static"),
+        }
+        job = store.enqueue(project_id, kind="build", payload=payload)
+        job_id = job["id"]
+
+        task = asyncio.create_task(_run_build_in_background(project_id, job_id))
+        active_tasks[job_id] = task
+
+        return {
+            "status": "queued",
+            "mode": "adjust",
+            "job_id": job_id,
+            "project_id": project_id,
+            "selected_domains": req.selected_domains,
         }
 
     @app.get("/api/artifacts/{project_id}/{job_id}")

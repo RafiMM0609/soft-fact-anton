@@ -172,6 +172,49 @@ def test_api_dashboard_and_list_endpoints(test_app_and_client):
     assert any(j["project_id"] == proj["id"] for j in resp_jobs.json())
 
 
+def test_api_adjust_preview_and_trigger(test_app_and_client):
+    from factory.models import AdjustScope, DomainCandidate
+
+    _, client, store, token = test_app_and_client
+    headers = {"Authorization": f"Bearer {token}"}
+    proj = store.create_project({"name": "adj-proj", "brief": "brief", "profile": "static"})
+
+    mock_scope = AdjustScope(
+        summary="Form input user",
+        candidates=[
+            DomainCandidate(
+                domain_path="User > Form Input Data Detail User",
+                reason="Matches user detail form request",
+                target_files=["index.html", "app.js"],
+            )
+        ],
+    )
+
+    with patch("factory.engine.Engine.preview_adjust_scope", return_value=mock_scope):
+        resp_prev = client.post(
+            f"/api/projects/{proj['id']}/adjust/preview",
+            headers=headers,
+            json={"instruction": "Ubah form input data user"},
+        )
+        assert resp_prev.status_code == 200
+        assert resp_prev.json()["candidates"][0]["domain_path"] == "User > Form Input Data Detail User"
+
+    with patch("factory.engine.Engine.build", return_value={"status": "succeeded"}):
+        resp_adj = client.post(
+            f"/api/projects/{proj['id']}/adjust",
+            headers=headers,
+            json={
+                "instruction": "Ubah form input data user",
+                "selected_domains": ["User > Form Input Data Detail User"],
+                "target_files": ["index.html", "app.js"],
+            },
+        )
+        assert resp_adj.status_code == 202
+        data = resp_adj.json()
+        assert data["mode"] == "adjust"
+        assert data["project_id"] == proj["id"]
+
+
 def test_cli_main_api_parser():
     with patch("factory.cli.api_command") as mock_api:
         mock_api.return_value = 0
