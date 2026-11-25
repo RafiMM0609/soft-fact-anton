@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ACP Software Factory — Workspace</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=3" />
 </head>
 <body>
   <div class="layout">
@@ -118,10 +118,10 @@
               </div>
               <span class="mono" style="color:var(--muted);">Cek hierarki domain dulu sebelum eksekusi</span>
             </div>
-            <form id="adjust-preview-form" style="display:grid;gap:10px;">
+            <form id="adjust-preview-form" onsubmit="return false;" style="display:grid;gap:10px;">
               <textarea id="adj-instruction" rows="2" required placeholder="Misal: Ubah form input tambah acara agar ada pilihan kapasitas peserta..."></textarea>
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                <button id="adj-preview-btn" class="secondary" type="submit">Cek Scope Domain →</button>
+                <button id="adj-preview-btn" class="secondary" type="button">Cek Scope Domain →</button>
                 <span id="adj-status" class="mono" style="color:var(--muted);"></span>
               </div>
             </form>
@@ -207,6 +207,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=3"></script>
 </body>
 </html>

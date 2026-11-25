@@ -217,11 +217,13 @@ async function loadProjectDetail(projectId) {
   };
 }
 
-$("adjust-preview-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
+async function runAdjustPreview() {
   if (!selectedProjectId) return;
   const instruction = $("adj-instruction").value.trim();
-  if (!instruction) return;
+  if (!instruction) {
+    $("adj-status").textContent = "Isi instruksi perubahan terlebih dahulu.";
+    return;
+  }
   $("adj-status").textContent = "Menganalisis scope domain...";
   $("adj-preview-btn").disabled = true;
   try {
@@ -248,6 +250,12 @@ $("adjust-preview-form").addEventListener("submit", async (e) => {
   } finally {
     $("adj-preview-btn").disabled = false;
   }
+}
+
+$("adj-preview-btn").addEventListener("click", runAdjustPreview);
+$("adjust-preview-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  runAdjustPreview();
 });
 
 $("adj-cancel-btn").addEventListener("click", () => {
