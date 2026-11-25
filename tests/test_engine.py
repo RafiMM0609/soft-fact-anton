@@ -57,8 +57,8 @@ def test_settings_defaults(tmp_path: Path):
     assert s.products_dir == tmp_path / "custom_data" / "products"
     assert s.harness == "agy"
     assert s.worker_concurrency == 1
-    assert s.max_repairs == 3
-    assert s.agent_timeout == 300
+    assert s.max_repairs == 5
+    assert s.agent_timeout == 600
     assert s.worker_timeout == 1800
     assert len(s.operator_token) > 10
 

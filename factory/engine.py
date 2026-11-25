@@ -132,6 +132,7 @@ class Engine:
             return {"status": "cancelled", "project_id": project_id, "job_id": job_id}
 
         root = ensure_repo(self.settings.data, project_id)
+        usage_before = dict(getattr(self.agent, "total_usage", {}) or {})
 
         try:
             # 1. Resolve or generate plan
@@ -230,6 +231,12 @@ class Engine:
                 profile=profile,
             )
 
+            usage_after = dict(getattr(self.agent, "total_usage", {}) or {})
+            token_usage = {
+                k: max(0, int(usage_after.get(k, 0)) - int(usage_before.get(k, 0)))
+                for k in ("input_tokens", "output_tokens", "thinking_tokens", "cache_read_tokens", "total_tokens")
+            }
+
             artifact = {
                 "project_id": project_id,
                 "job_id": job_id,
@@ -237,6 +244,7 @@ class Engine:
                 "tasks_completed": completed_tasks,
                 "verification": verifier_msg,
                 "test_results": test_results,
+                "token_usage": token_usage,
                 "artifact_path": tar_info["artifact_path"],
                 "digest": tar_info["digest"],
                 "size_bytes": tar_info["size_bytes"],

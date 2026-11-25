@@ -103,6 +103,36 @@ def parse_schema_output(text: str, schema: type[T]) -> T:
     return schema.model_validate_json(cleaned)
 
 
+USAGE_KEYS = (
+    "input_tokens",
+    "output_tokens",
+    "thinking_tokens",
+    "cache_read_tokens",
+    "total_tokens",
+)
+
+
+def extract_usage(raw_output: str) -> dict[str, int]:
+    """Extract token usage counters from raw agy JSON output if present."""
+    usage: dict[str, int] = {k: 0 for k in USAGE_KEYS}
+    if not raw_output:
+        return usage
+    try:
+        data = json.loads(raw_output.strip())
+    except json.JSONDecodeError:
+        return usage
+    if not isinstance(data, dict):
+        return usage
+    raw_usage = data.get("usage")
+    if not isinstance(raw_usage, dict):
+        return usage
+    for key in USAGE_KEYS:
+        val = raw_usage.get(key)
+        if isinstance(val, (int, float)):
+            usage[key] = int(val)
+    return usage
+
+
 class AcpAgent:
     """Tool-free structured generation agent for planning, review, and test stages."""
 
@@ -117,6 +147,14 @@ class AcpAgent:
         self.model = model
         self.runner = runner
         self.harness_path = harness_path
+        self.last_usage: dict[str, int] = {k: 0 for k in USAGE_KEYS}
+        self.total_usage: dict[str, int] = {k: 0 for k in USAGE_KEYS}
+
+    def _record_usage(self, raw_output: str) -> None:
+        usage = extract_usage(raw_output)
+        self.last_usage = usage
+        for key in USAGE_KEYS:
+            self.total_usage[key] += usage.get(key, 0)
 
     def _build_prompt(
         self,
@@ -209,6 +247,7 @@ class AcpAgent:
         """
         prompt = self._build_prompt(role, instruction, context, schema)
         output = self._execute(prompt, schema, timeout, cancelled)
+        self._record_usage(output)
 
         try:
             return parse_schema_output(output, schema)
@@ -229,6 +268,7 @@ class AcpAgent:
                 "Do NOT include markdown fences, comments, or introductory text."
             )
             retry_output = self._execute(retry_prompt, schema, timeout, cancelled)
+            self._record_usage(retry_output)
             try:
                 return parse_schema_output(retry_output, schema)
             except (ValidationError, ValueError) as retry_exc:

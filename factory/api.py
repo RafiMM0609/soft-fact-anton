@@ -15,6 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from factory.config import Settings
@@ -58,6 +59,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    static_dir = Path(__file__).resolve().parent / "static"
+    if static_dir.is_dir():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
     # In-memory tracking of active background tasks: job_id -> asyncio.Task
     active_tasks: dict[str, asyncio.Task[Any]] = {}
 
@@ -74,6 +79,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         return credentials.credentials
+
+    @app.get("/")
+    def dashboard() -> FileResponse:
+        """Serve the built-in operator web dashboard."""
+        index_path = Path(__file__).resolve().parent / "static" / "index.html"
+        if not index_path.is_file():
+            raise HTTPException(status_code=404, detail="Dashboard UI not found")
+        return FileResponse(path=str(index_path), media_type="text/html")
 
     @app.get("/health")
     def health_check() -> dict[str, Any]:
@@ -92,6 +105,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             shutil.which(settings.harness)
         )
 
+        mem_total_mb: int | None = None
+        mem_used_mb: int | None = None
+        try:
+            meminfo = Path("/proc/meminfo").read_text(encoding="utf-8")
+            vals: dict[str, int] = {}
+            for line in meminfo.splitlines():
+                parts = line.split()
+                if len(parts) >= 2 and parts[1].isdigit():
+                    vals[parts[0].rstrip(":")] = int(parts[1])
+            if "MemTotal" in vals and "MemAvailable" in vals:
+                mem_total_mb = vals["MemTotal"] // 1024
+                mem_used_mb = (vals["MemTotal"] - vals["MemAvailable"]) // 1024
+        except OSError:
+            pass
+
         return {
             "status": "ready" if harness_ok else "warning",
             "python": py_ver,
@@ -99,6 +127,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "harness": settings.harness,
             "harness_ready": harness_ok,
             "data_dir": str(settings.data),
+            "memory_used_mb": mem_used_mb,
+            "memory_total_mb": mem_total_mb,
         }
 
     async def _run_build_in_background(project_id: str, job_id: str) -> None:
@@ -229,6 +259,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             task.cancel()
 
         return {"job_id": job_id, "status": "cancelling"}
+
+    @app.get("/api/jobs")
+    def list_jobs(
+        limit: int = 30,
+        _auth: str = Depends(require_operator_auth),
+    ) -> list[dict[str, Any]]:
+        """List recent build jobs with token usage summary."""
+        rows = store.all(
+            "SELECT id, project_id, kind, state, created, started, finished, error, result FROM jobs ORDER BY created DESC LIMIT ?",
+            (limit,),
+        )
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            token_usage: dict[str, Any] = {}
+            raw_res = row.get("result")
+            if raw_res:
+                try:
+                    parsed = json.loads(raw_res) if isinstance(raw_res, str) else raw_res
+                    if isinstance(parsed, dict) and isinstance(parsed.get("token_usage"), dict):
+                        token_usage = parsed["token_usage"]
+                except Exception:
+                    pass
+            items.append(
+                {
+                    "id": row["id"],
+                    "project_id": row["project_id"],
+                    "kind": row["kind"],
+                    "state": row["state"],
+                    "created": row["created"],
+                    "started": row.get("started"),
+                    "finished": row.get("finished"),
+                    "error": row.get("error"),
+                    "token_usage": token_usage,
+                }
+            )
+        return items
+
+    @app.get("/api/projects")
+    def list_projects(_auth: str = Depends(require_operator_auth)) -> list[dict[str, Any]]:
+        """List all registered projects."""
+        return store.all(
+            "SELECT id, name, profile, state, created FROM projects ORDER BY created DESC LIMIT 100"
+        )
 
     @app.get("/api/projects/{project_id}")
     def get_project(project_id: str, _auth: str = Depends(require_operator_auth)) -> dict[str, Any]:

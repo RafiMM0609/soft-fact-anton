@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ACP Software Factory — Workspace</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <a class="brand" href="/">
+        <span class="brand-mark">A</span>
+        <span>acp-factory<span class="brand-sub">SOFTWARE FACTORY</span></span>
+      </a>
+
+      <div>
+        <div class="nav-label">RUANG KERJA</div>
+        <div class="nav-group">
+          <button class="nav active" data-tab="overview">◈ Proyek</button>
+          <button class="nav" data-tab="jobs">⚙ Jobs &amp; Token</button>
+          <button class="nav" data-tab="events">≡ Event Ledger</button>
+        </div>
+      </div>
+
+      <div class="sidebar-note">
+        <div><span id="sidebar-dot" class="dot"></span><span id="sidebar-status">Menunggu koneksi</span></div>
+        <div id="sidebar-meta" class="mono" style="margin-top:6px;">Single FastAPI Backend</div>
+      </div>
+    </aside>
+
+    <div class="main-col">
+      <header class="topbar">
+        <div class="crumb">Ruang kerja / <strong id="crumb-title">Proyek</strong></div>
+        <div class="header-right">
+          <span id="connection-text" class="mono">Belum terhubung</span>
+          <button id="refresh-btn" class="secondary" type="button" hidden>Refresh</button>
+          <button id="logout-btn" class="quiet" type="button" hidden>Putuskan</button>
+        </div>
+      </header>
+
+      <main class="content">
+        <!-- Login / Connect -->
+        <section id="login-view" class="card login-box">
+          <div class="eyebrow">RUANG KERJA SOFTWARE ANDA</div>
+          <h1>Dari brief ke rilis terverifikasi.</h1>
+          <p class="sub">Masukkan Operator Token (dari <code>data/.operator_token</code>) untuk mengelola build, memantau worker, dan melihat akumulasi token.</p>
+          <form id="connect-form" style="display:grid;gap:12px;">
+            <input id="token-input" type="password" autocomplete="off" required placeholder="Tempel operator token Anda" />
+            <button class="primary" type="submit">Hubungkan ke factory →</button>
+          </form>
+          <div id="login-error" class="mono" style="color:var(--err);margin-top:10px;"></div>
+        </section>
+
+        <!-- Overview -->
+        <section id="overview-view" hidden style="display:grid;gap:18px;">
+          <div class="heading">
+            <div>
+              <div class="eyebrow">BANGUN DENGAN NIAT</div>
+              <h1>Proyek</h1>
+            </div>
+            <button id="new-project-btn" class="primary" type="button">+ Proyek baru</button>
+          </div>
+
+          <div class="metrics">
+            <div class="card metric">
+              <small>PROYEK</small>
+              <strong id="m-projects">0</strong>
+              <div class="meta" id="m-harness">Harness: -</div>
+            </div>
+            <div class="card metric">
+              <small>WORKER BUILD</small>
+              <strong id="m-jobs">0</strong>
+              <div class="meta" id="m-jobs-sub">aktif: 0 | sukses: 0</div>
+            </div>
+            <div class="card metric">
+              <small>TOTAL TOKEN</small>
+              <strong id="m-tokens">0</strong>
+              <div class="meta" id="m-tokens-sub">in: 0 | out: 0 | think: 0</div>
+            </div>
+            <div class="card metric">
+              <small>MEMORI VPS</small>
+              <strong id="m-memory">-</strong>
+              <div class="meta" id="m-cache">cache read: 0 tok</div>
+            </div>
+          </div>
+
+          <div id="readiness-notice" class="notice" hidden></div>
+          <div id="project-grid" class="project-grid"></div>
+        </section>
+
+        <!-- Project Detail -->
+        <section id="detail-view" hidden style="display:grid;gap:18px;">
+          <div>
+            <button id="back-btn" class="quiet" type="button">← Semua proyek</button>
+          </div>
+
+          <div class="heading">
+            <div style="min-width:0;flex:1;">
+              <div class="eyebrow" id="d-profile">static</div>
+              <h1 id="d-name">-</h1>
+              <p class="sub" id="d-brief" style="margin-bottom:0;"></p>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <span id="d-state" class="badge">-</span>
+              <button id="d-rebuild-btn" class="secondary" type="button">Build Ulang</button>
+            </div>
+          </div>
+
+          <div id="d-pipeline" class="pipeline"></div>
+
+          <div class="grid-2">
+            <div class="card">
+              <h2>Riwayat Job &amp; Token</h2>
+              <div id="d-jobs" class="list"></div>
+            </div>
+            <div class="card">
+              <h2>Detail Job Terpilih</h2>
+              <div id="d-job-panel" style="display:grid;gap:10px;">
+                <span class="mono" style="color:var(--muted);">Pilih job di sebelah kiri.</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Jobs & Token Tab -->
+        <section id="jobs-view" hidden style="display:grid;gap:18px;">
+          <div class="heading">
+            <div>
+              <div class="eyebrow">TELEMETRI &amp; ARTIFACT</div>
+              <h1>Jobs &amp; Akumulasi Token</h1>
+            </div>
+          </div>
+          <div id="all-jobs-list" class="list" style="max-height:none;"></div>
+        </section>
+
+        <!-- Events Tab -->
+        <section id="events-view" hidden style="display:grid;gap:18px;">
+          <div class="heading">
+            <div>
+              <div class="eyebrow">AUDIT TRAIL</div>
+              <h1>Event Ledger</h1>
+            </div>
+          </div>
+          <div id="events-list" class="list" style="max-height:none;"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- Modal New Build -->
+  <div id="build-modal" class="modal-backdrop" hidden>
+    <div class="card modal">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2 style="margin:0;">Buat &amp; Bangun Proyek Baru</h2>
+        <button id="close-modal-btn" class="quiet" type="button">✕</button>
+      </div>
+      <form id="build-form">
+        <label>
+          Nama Produk (opsional)
+          <input id="f-product" type="text" placeholder="misal: nexus-kanban" />
+        </label>
+        <label>
+          Profile
+          <select id="f-profile">
+            <option value="static">static (HTML/CSS/JS)</option>
+            <option value="go-htmx">go-htmx</option>
+            <option value="node">node</option>
+            <option value="zig">zig</option>
+          </select>
+        </label>
+        <label>
+          Brief Produk
+          <textarea id="f-brief" required placeholder="Jelaskan fitur, tampilan, dan alur aplikasi yang ingin dibangun..."></textarea>
+        </label>
+        <div class="modal-actions">
+          <button id="cancel-modal-btn" class="secondary" type="button">Batal</button>
+          <button class="primary" type="submit">Mulai Build</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

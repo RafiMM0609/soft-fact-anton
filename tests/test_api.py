@@ -144,6 +144,34 @@ def test_api_events(test_app_and_client):
     assert events[0]["kind"] == "test.event"
 
 
+def test_api_dashboard_and_list_endpoints(test_app_and_client):
+    _, client, store, token = test_app_and_client
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Dashboard HTML shell and static assets
+    resp_html = client.get("/")
+    assert resp_html.status_code == 200
+    assert "acp-factory" in resp_html.text
+
+    resp_css = client.get("/static/style.css")
+    assert resp_css.status_code == 200
+
+    resp_js = client.get("/static/app.js")
+    assert resp_js.status_code == 200
+
+    # List projects and jobs
+    proj = store.create_project({"name": "dash-proj", "brief": "brief", "profile": "static"})
+    store.enqueue(proj["id"], kind="build", payload={"brief": "brief"})
+
+    resp_projs = client.get("/api/projects", headers=headers)
+    assert resp_projs.status_code == 200
+    assert any(p["id"] == proj["id"] for p in resp_projs.json())
+
+    resp_jobs = client.get("/api/jobs", headers=headers)
+    assert resp_jobs.status_code == 200
+    assert any(j["project_id"] == proj["id"] for j in resp_jobs.json())
+
+
 def test_cli_main_api_parser():
     with patch("factory.cli.api_command") as mock_api:
         mock_api.return_value = 0
