@@ -14,7 +14,7 @@ from factory.db import Store
 from factory.models import Plan, Task
 from factory.parallel import ParallelBuilder
 from factory.products import ensure_repo, head_commit
-from factory.testing import Tester
+from factory.testing import Tester, run_product_server
 from factory.verifier import Verifier
 from factory.artifact import assemble_artifact
 
@@ -32,8 +32,9 @@ Given a project brief and profile, decompose the requirements into a coherent, e
 Requirements:
 1. Create atomic, independently verifiable tasks with clear instructions and acceptance criteria.
 2. Define explicit task dependencies (depends_on) to form a valid Directed Acyclic Graph (DAG) without cycles.
-3. Identify user-facing acceptance flows (kind="api" or kind="browser") with concrete steps and selectors.
-4. Ensure task IDs are lowercase kebab-case (^[a-z][a-z0-9_-]{0,47}$).
+3. Identify user-facing acceptance flows (kind="api" or kind="browser") with concrete steps and selectors. For API steps, ALWAYS use relative paths (e.g. 'GET /healthz', 'POST /items'), NEVER hardcode ports or localhost URLs.
+4. For server/backend profiles (go-htmx, node, zig), the application MUST read the listen port from the `PORT` environment variable (defaulting to 8080 if unset; never hardcode port 8000).
+5. Ensure task IDs are lowercase kebab-case (^[a-z][a-z0-9_-]{0,47}$).
 """
 
 
@@ -209,7 +210,10 @@ class Engine:
                 raise RuntimeError("Build cancelled during testing")
 
             if active_plan.test_flows:
-                tester_ok, test_results = self.tester.run_flows(active_plan.test_flows)
+                with run_product_server(root) as base_url:
+                    tester_ok, test_results = self.tester.run_flows(
+                        active_plan.test_flows, base_url=base_url
+                    )
                 if not tester_ok:
                     raise RuntimeError(f"Acceptance testing failed:\n{json.dumps(test_results)}")
             else:

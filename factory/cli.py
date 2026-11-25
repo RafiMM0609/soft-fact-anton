@@ -200,7 +200,8 @@ def run_command(
         env.update({"HOST": host, "PORT": str(port)})
         print(f"Starting Go backend on http://{host}:{port} (PORT={port})...")
         try:
-            cmd = ["go", "run", "."]
+            target = "./cmd/server" if (project_dir / "cmd" / "server" / "main.go").is_file() and not (project_dir / "main.go").is_file() else "."
+            cmd = ["go", "run", target]
             proc = subprocess.run(cmd, cwd=project_dir, env=env)
             return proc.returncode
         except KeyboardInterrupt:
