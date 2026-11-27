@@ -669,11 +669,18 @@
           </select>
         </label>
 
+        <label class="field-label" id="f-model-field" hidden>
+          <span data-i18n="mod.model_id">Model ID (opsional)</span>
+          <input id="f-model-id" type="text" placeholder="provider/model-id" spellcheck="false" autocomplete="off" disabled>
+          <small data-i18n="mod.model_hint">Lihat ID dengan opencode models. Kosongkan untuk memakai default OpenCode.</small>
+        </label>
+
         <label class="field-label">
           <span data-i18n="mod.brief">Brief Produk</span>
           <textarea id="f-brief" rows="5" required placeholder="Jelaskan tujuan bisnis, fitur utama, gaya visual, dan alur pengguna yang ingin dibangun..."></textarea>
         </label>
 
+        <div id="f-build-error" class="error-box" role="alert" hidden></div>
         <div class="modal-actions">
           <button id="cancel-modal-btn" class="secondary" type="button" data-i18n="mod.cancel">Batal</button>
           <button id="submit-build-btn" class="primary" type="submit">
@@ -863,7 +870,7 @@
   <!-- Toast Container -->
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-  <script src="/static/i18n.js?v=5"></script>
-  <script src="/static/app.js?v=5"></script>
+  <script src="/static/i18n.js?v=7"></script>
+  <script src="/static/app.js?v=7"></script>
 </body>
 </html>

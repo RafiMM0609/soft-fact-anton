@@ -290,7 +290,17 @@ async function apiFetch(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`${res.status}: ${body}`);
+    let detail = body;
+    try {
+      const parsed = JSON.parse(body).detail;
+      if (typeof parsed === "string") detail = parsed;
+      if (Array.isArray(parsed)) {
+        detail = parsed.map(({ loc, msg }) => [loc?.slice(1).join("."), msg].filter(Boolean).join(": ")).join("\n");
+      }
+    } catch {
+      // Preserve plain-text HTTP errors.
+    }
+    throw new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
   }
   return res.json();
 }
@@ -654,16 +664,17 @@ function renderProjects() {
 /* ==========================================================================
    Project Detail, Event-Driven Pipeline & Wave DAG
    ========================================================================== */
-window.openProject = async (projectId) => {
+window.openProject = async (projectId, jobId = null) => {
   const isNew = selectedProjectId !== projectId;
   selectedProjectId = projectId;
-  selectedJobId = null;
+  selectedJobId = jobId;
   lastAdjustPreview = null;
   cachedFiles = [];
   selectedFilePath = null;
   $("adj-scope-box").hidden = true;
   $("adj-status").textContent = "";
-  if (isNew) setDetailTab("overview");
+  if (jobId) setDetailTab("jobs");
+  else if (isNew) setDetailTab("overview");
   setActiveNav("detail");
   showView("detail-view");
   await loadProjectDetail(projectId);
@@ -1311,6 +1322,17 @@ window.inspectJob = async (jobId) => {
     )
     .join("");
 
+  const acpErrors = (j.acp_errors || []).map(({ created, detail }) => {
+    const context = [detail.stage, detail.harness, detail.model_id, detail.task_id];
+    if (detail.attempt != null) context.push(`${tr("job.attempt")} ${detail.attempt}`);
+    if (detail.review_attempt != null) context.push(`${tr("job.review_attempt")} ${detail.review_attempt}`);
+    context.push(fmtRelative(created));
+    return `<div class="stack-xs">
+      <small class="muted-xs">${esc(context.filter(Boolean).join(" · "))}</small>
+      <div class="error-box">${esc(detail.error)}</div>
+    </div>`;
+  }).join("");
+
   const btns = [];
   if (j.state === "running" || j.state === "queued") {
     btns.push(`<button class="danger sm" onclick="window.cancelJob('${esc(j.id)}')">${esc(tr("job.cancel"))}</button>`);
@@ -1342,6 +1364,7 @@ window.inspectJob = async (jobId) => {
     }
 
     ${j.error ? `<div class="error-box">${esc(j.error)}</div>` : ""}
+    ${acpErrors ? `<section class="stack-xs"><strong>${esc(tr("job.acp_errors"))}</strong>${acpErrors}</section>` : ""}
     ${btns.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;">${btns.join("")}</div>` : ""}
 
     <div class="stack-xs">
@@ -1370,7 +1393,7 @@ function renderAllJobs() {
           const u = j.token_usage || {};
           const dur = j.started ? ` · ${fmtDuration(j.started, j.finished)}` : "";
           return `
-          <div class="row clickable" onclick="window.openProject('${esc(j.project_id)}')">
+          <div class="row clickable" onclick="window.openProject('${esc(j.project_id)}','${esc(j.id)}')">
             <div style="min-width:0;flex:1;">
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                 <strong style="font-size:0.9rem;">${esc(j.project_id)}</strong>
@@ -1729,6 +1752,14 @@ document.querySelectorAll(".preset-chip").forEach((chip) => {
   });
 });
 
+function syncBuildModelField() {
+  const isOpenCode = $("f-harness").value === "opencode";
+  $("f-model-field").hidden = !isOpenCode;
+  $("f-model-id").disabled = !isOpenCode;
+}
+
+$("f-harness").addEventListener("change", syncBuildModelField);
+
 function populateHarnessSelect(doctor) {
   const sel = $("f-harness");
   if (!sel || !doctor) return;
@@ -1752,6 +1783,7 @@ function populateHarnessSelect(doctor) {
   } else if (doctor.harness && order.includes(doctor.harness)) {
     sel.value = doctor.harness;
   }
+  syncBuildModelField();
 }
 
 function closeBuildModal() {
@@ -1759,6 +1791,7 @@ function closeBuildModal() {
 }
 
 $("new-project-btn").addEventListener("click", () => {
+  $("f-build-error").hidden = true;
   $("build-modal").hidden = false;
   setTimeout(() => $("f-product").focus(), 40);
 });
@@ -1795,6 +1828,10 @@ document.addEventListener("keydown", (e) => {
 $("build-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = $("submit-build-btn");
+  const harness = $("f-harness").value;
+  const modelId = harness === "opencode" ? $("f-model-id").value.trim() : "";
+  const errorBox = $("f-build-error");
+  errorBox.hidden = true;
   btn.disabled = true;
   try {
     const res = await apiFetch("/api/build", {
@@ -1803,20 +1840,27 @@ $("build-form").addEventListener("submit", async (e) => {
       body: JSON.stringify({
         product: $("f-product").value.trim() || null,
         profile: $("f-profile").value,
-        harness: $("f-harness") ? $("f-harness").value : null,
+        harness,
+        ...(modelId ? { model_id: modelId } : {}),
         brief: $("f-brief").value.trim(),
       }),
     });
     closeBuildModal();
     $("f-brief").value = "";
     $("f-product").value = "";
+    $("f-model-id").value = "";
     setProfileSelection("static");
     showToast(`Build dimulai untuk ${res.project_id}`, "ok");
     await window.openProject(res.project_id);
     selectedJobId = res.job_id;
     await refreshWorkspace();
   } catch (err) {
-    showToast(`Gagal memulai build: ${err.message}`, "err");
+    if ($("build-modal").hidden) {
+      showToast(err.message, "err");
+    } else {
+      errorBox.textContent = err.message;
+      errorBox.hidden = false;
+    }
   } finally {
     btn.disabled = false;
   }

@@ -7,6 +7,7 @@ and execute bounded subprocesses.
 
 from __future__ import annotations
 
+from functools import lru_cache
 import json
 import logging
 import os
@@ -15,6 +16,7 @@ import selectors
 import shutil
 import signal
 import subprocess
+import threading
 import time
 from typing import Any, Callable
 
@@ -142,6 +144,10 @@ def resolve_harness(agent_name: str = "agy") -> str:
 
         which_oc = shutil.which("opencode")
         if which_oc:
+            if os.name == "nt" and Path(which_oc).suffix.lower() == ".cmd":
+                npm_exe = Path(which_oc).parent / "node_modules" / "@opencode" / "cli" / "bin" / "opencode.exe"
+                if npm_exe.is_file():
+                    return str(npm_exe)
             return which_oc
 
         home = Path.home()
@@ -207,6 +213,22 @@ def get_harness_path(agent_name: str = "agy") -> str:
     return resolve_harness(agent_name)
 
 
+@lru_cache(maxsize=8)
+def opencode_supports_standalone(executable: str) -> bool:
+    """Check whether OpenCode can run with a private server."""
+    try:
+        result = subprocess.run(
+            [executable, "run", "--help"],
+            env=isolated_env(),
+            capture_output=True,
+            timeout=5,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return b"--standalone" in result.stdout
+
+
 def acp_command(
     worktree: Path | str | None = None,
     agent_name: str = "agy",
@@ -232,9 +254,7 @@ def acp_command(
         if worktree is not None:
             cmd.extend(["--add-dir", str(Path(worktree).resolve())])
     elif normalized == "opencode":
-        cmd = [executable, "acp", "--pure"]
-        if worktree is not None:
-            cmd.extend(["--cwd", str(Path(worktree).resolve())])
+        cmd = [executable, "acp"]
     else:
         cmd = [executable, "acp"]
         if worktree is not None:
@@ -286,7 +306,7 @@ def print_command(
         if model:
             cmd.extend(["--model", model])
     elif normalized == "opencode":
-        cmd = [executable, "run", "--format", "json", "--pure"]
+        cmd = [executable, "run", "--format", "json"]
         if model:
             cmd.extend(["--model", model])
         cmd.append(instruction)
@@ -483,12 +503,35 @@ def run_process(
     output = bytearray()
     truncated = 0
     deadline = time.monotonic() + timeout
-    selector = selectors.DefaultSelector()
     assert process.stdout is not None
-    selector.register(process.stdout, selectors.EVENT_READ)
+    stdout = process.stdout
+
+    def append_chunk(chunk: bytes) -> None:
+        nonlocal truncated
+        output.extend(chunk)
+        if len(output) > max_output:
+            excess = len(output) - max_output
+            del output[:excess]
+            truncated += excess
+
+    def read_windows_pipe() -> None:
+        with stdout:
+            while chunk := stdout.read1(65536):
+                append_chunk(chunk)
+
+    reader = None
+    selector = None
 
     try:
-        while selector.get_map():
+        if os.name == "nt":
+            # Windows selectors handle sockets, but cannot monitor subprocess pipes.
+            reader = threading.Thread(target=read_windows_pipe, daemon=True)
+            reader.start()
+        else:
+            selector = selectors.DefaultSelector()
+            selector.register(stdout, selectors.EVENT_READ)
+
+        while (reader is not None and reader.is_alive()) or (selector is not None and selector.get_map()):
             if cancelled():
                 raise AcpProcessError("Cancellation requested")
             if time.monotonic() > deadline:
@@ -496,16 +539,15 @@ def run_process(
                 raise AcpProcessError(
                     f"Process exceeded its {timeout}s deadline and was stopped: {tail}"
                 )
-            for key, _ in selector.select(timeout=0.2):
-                chunk = os.read(key.fileobj.fileno(), 65536)
-                if not chunk:
-                    selector.unregister(key.fileobj)
-                else:
-                    output.extend(chunk)
-                    if len(output) > max_output:
-                        excess = len(output) - max_output
-                        del output[:excess]
-                        truncated += excess
+            if reader is not None:
+                reader.join(timeout=0.2)
+            elif selector is not None:
+                for key, _ in selector.select(timeout=0.2):
+                    chunk = os.read(key.fileobj.fileno(), 65536)
+                    if chunk:
+                        append_chunk(chunk)
+                    else:
+                        selector.unregister(key.fileobj)
 
         code = process.wait(timeout=max(0.1, deadline - time.monotonic()))
         text = output.decode("utf-8", errors="replace")
@@ -515,11 +557,17 @@ def run_process(
             raise AcpProcessError(f"Process failed with exit code {code}: {text[-10000:]}")
         return text
     finally:
-        selector.close()
-        if process.stdout:
-            process.stdout.close()
+        if selector is not None:
+            selector.close()
+        if reader is None:
+            stdout.close()
         try:
-            os.killpg(process.pid, signal.SIGKILL)
+            if os.name == "nt":
+                process.kill()
+            else:
+                os.killpg(process.pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError, OSError):
             pass
         process.wait()
+        if reader is not None:
+            reader.join(timeout=0.2)

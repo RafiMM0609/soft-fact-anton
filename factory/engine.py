@@ -9,6 +9,7 @@ import time
 from typing import Any, Callable
 
 from acp.agent import AcpAgent
+from acp.protocol import AcpError
 from acp.worker import AcpWorker
 from factory.config import Settings
 from factory.db import Store
@@ -54,15 +55,20 @@ class Engine:
         self.settings = settings if settings is not None else Settings()
         self.store = store if store is not None else Store(self.settings.data / "factory.db")
         resolved_harness = self.settings.resolve_harness_path()
+        model = (
+            self.settings.opencode_model
+            if self.settings.harness.strip().lower() == "opencode"
+            else None
+        )
         self.agent = (
             agent
             if agent is not None
-            else AcpAgent(agent_name=self.settings.harness, harness_path=resolved_harness)
+            else AcpAgent(agent_name=self.settings.harness, harness_path=resolved_harness, model=model)
         )
         self.worker = (
             worker
             if worker is not None
-            else AcpWorker(agent_name=self.settings.harness, harness_path=resolved_harness)
+            else AcpWorker(agent_name=self.settings.harness, harness_path=resolved_harness, model=model)
         )
         self.verifier = verifier if verifier is not None else Verifier()
         self.tester = tester if tester is not None else Tester()
@@ -311,6 +317,7 @@ class Engine:
         root = ensure_repo(self.settings.data, project_id)
         usage_before = dict(getattr(self.agent, "total_usage", {}) or {})
 
+        stage = "planner"
         try:
             # 1. Resolve or generate plan
             job_payload: dict[str, Any] = {}
@@ -361,6 +368,7 @@ class Engine:
                     (active_plan.model_dump_json(), project_id),
                 )
 
+            stage = "build"
             # 2. Execute parallel wave builder over worktrees
             dealer = None
             if DesignDealer and hasattr(self.settings, "skills_dir") and self.settings.skills_dir.is_dir():
@@ -496,6 +504,8 @@ class Engine:
         except Exception as exc:
             err_msg = str(exc)
             logger.error("Build failed for project %s (job %s): %s", project_id, job_id, err_msg)
+            if stage == "planner" and isinstance(exc, (AcpError, ValueError)):
+                self.store.record_acp_error(project_id, job_id, stage, self.agent, exc)
             self.store.finish(job_id, state="failed", error=err_msg)
             self.store.event(project_id, job_id, "build.failed", {"error": err_msg})
             raise

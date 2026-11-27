@@ -56,7 +56,7 @@ def test_api_build_and_job_lifecycle(test_app_and_client):
     _, client, store, token = test_app_and_client
     headers = {"Authorization": f"Bearer {token}"}
 
-    with patch("factory.engine.Engine.build") as mock_build:
+    with patch("factory.engine.Engine.build", autospec=True) as mock_build:
         mock_build.return_value = {"status": "succeeded", "digest": "sha256:dummy"}
 
         # 1. Trigger build (with explicit opencode harness override)
@@ -65,6 +65,7 @@ def test_api_build_and_job_lifecycle(test_app_and_client):
             "product": "coffee-shop-api",
             "profile": "static",
             "harness": "opencode",
+            "model_id": " provider/model ",
         }
         resp = client.post("/api/build", json=payload, headers=headers)
         assert resp.status_code == 202
@@ -73,6 +74,12 @@ def test_api_build_and_job_lifecycle(test_app_and_client):
         assert body["harness"] == "opencode"
         job_id = body["job_id"]
         assert body["project_id"] == "coffee-shop-api"
+        build_engine = mock_build.call_args.args[0]
+        assert build_engine.agent.model == build_engine.worker.model == "provider/model"
+        store.record_acp_error(
+            "coffee-shop-api", job_id, "worker", build_engine.worker,
+            RuntimeError("Model unavailable"), task_id="setup", attempt=1,
+        )
 
         # 2. Get Job
         resp_job = client.get(f"/api/jobs/{job_id}", headers=headers)
@@ -80,6 +87,14 @@ def test_api_build_and_job_lifecycle(test_app_and_client):
         job_data = resp_job.json()
         assert job_data["id"] == job_id
         assert job_data["project_id"] == "coffee-shop-api"
+        assert job_data["acp_errors"][0]["detail"] == {
+            "stage": "worker",
+            "harness": "opencode",
+            "model_id": "provider/model",
+            "error": "Model unavailable",
+            "task_id": "setup",
+            "attempt": 1,
+        }
 
         # 3. Get Project
         resp_proj = client.get("/api/projects/coffee-shop-api", headers=headers)

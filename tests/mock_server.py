@@ -6,6 +6,7 @@ import time
 
 
 def main() -> None:
+    model_id = None
     for raw_line in sys.stdin:
         line = raw_line.strip()
         if not line:
@@ -41,6 +42,11 @@ def main() -> None:
             sys.stdout.write(json.dumps(resp) + "\n")
             sys.stdout.flush()
 
+        elif method == "session/set_config_option" and params.get("configId") == "model":
+            model_id = params.get("value")
+            sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": req_id, "result": {}}) + "\n")
+            sys.stdout.flush()
+
         elif method == "session/prompt":
             sess_id = params.get("sessionId")
             raw_prompt = params.get("prompt", "")
@@ -71,6 +77,8 @@ def main() -> None:
                 "id": req_id,
                 "result": {"status": "completed", "output": f"Executed: {prompt}"},
             }
+            if model_id:
+                resp["result"]["output"] += f" with {model_id}"
             sys.stdout.write(json.dumps(resp) + "\n")
             sys.stdout.flush()
 

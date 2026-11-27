@@ -14,7 +14,7 @@ import tempfile
 from typing import Any, Callable, TypeVar
 from pydantic import BaseModel, ValidationError
 
-from acp.harness import isolated_env, print_command, run_process
+from acp.harness import isolated_env, opencode_supports_standalone, print_command, run_process
 from acp.protocol import AcpProcessError
 
 logger = logging.getLogger(__name__)
@@ -283,6 +283,10 @@ class AcpAgent:
         with tempfile.TemporaryDirectory(prefix="acp_agent_") as tmpdir:
             temp_home = Path(tmpdir)
             env = isolated_env(temp_home=temp_home)
+            if self.agent_name.strip().lower() == "opencode":
+                env["OPENCODE_PURE"] = "1"
+                if opencode_supports_standalone(cmd[0]):
+                    cmd.insert(2, "--standalone")
             return run_process(
                 cmd,
                 cwd=temp_home,

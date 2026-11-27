@@ -56,7 +56,7 @@ def test_resolve_harness_agy_env_override(tmp_path: Path, monkeypatch: pytest.Mo
 
 def test_resolve_harness_default_or_local() -> None:
     resolved = resolve_harness("agy")
-    assert resolved.endswith("agy")
+    assert Path(resolved).name.lower().removesuffix(".exe") == "agy"
     assert os.path.isfile(resolved)
 
 
@@ -139,7 +139,7 @@ def test_resolve_harness_opencode_local_bin(
 
 def test_acp_command_agy(tmp_path: Path) -> None:
     cmd = acp_command(worktree=tmp_path, agent_name="agy")
-    assert cmd[0].endswith("agy")
+    assert Path(cmd[0]).name.lower().removesuffix(".exe") == "agy"
     assert cmd[1] == "acp"
     assert "--dangerously-skip-permissions" in cmd
     assert "--add-dir" in cmd
@@ -153,7 +153,7 @@ def test_acp_command_other_agent(tmp_path: Path) -> None:
 
 def test_acp_command_opencode(tmp_path: Path) -> None:
     cmd = acp_command(worktree=tmp_path, agent_name="opencode", harness_path="/usr/bin/opencode")
-    assert cmd == ["/usr/bin/opencode", "acp", "--pure", "--cwd", str(tmp_path.resolve())]
+    assert cmd == ["/usr/bin/opencode", "acp"]
     assert "--add-dir" not in cmd
 
 
@@ -165,7 +165,7 @@ def test_print_command_agy(tmp_path: Path) -> None:
         agent_name="agy",
         model="claude-3-7-sonnet",
     )
-    assert cmd[0].endswith("agy")
+    assert Path(cmd[0]).name.lower().removesuffix(".exe") == "agy"
     assert "--print" in cmd
     assert "Generate code" in cmd
     assert "--output-format" in cmd
@@ -204,7 +204,6 @@ def test_print_command_opencode() -> None:
         "run",
         "--format",
         "json",
-        "--pure",
         "--model",
         "anthropic/claude-sonnet-4",
         "Plan architecture",
@@ -453,12 +452,14 @@ def test_acp_worker_with_mock_runner(tmp_path: Path) -> None:
     assert log == expected_log
 
 
-def test_acp_worker_with_mock_acp_server(tmp_path: Path) -> None:
+@pytest.mark.parametrize("agent_name", ["agy", "opencode"])
+def test_acp_worker_with_mock_acp_server(tmp_path: Path, agent_name: str) -> None:
     worktree = tmp_path / "mock_worktree"
     worktree.mkdir()
 
     mock_command = [sys.executable, str(MOCK_SERVER_PATH)]
-    worker = AcpWorker(command=mock_command)
+    model_id = "provider/model"
+    worker = AcpWorker(command=mock_command, agent_name=agent_name, model=model_id)
 
     log = worker.run_task(
         worktree=worktree,
@@ -468,6 +469,7 @@ def test_acp_worker_with_mock_acp_server(tmp_path: Path) -> None:
     assert "Analyzing prompt..." in log
     assert "Execution finished." in log
     assert "Executed:" in log and "Refactor database layer" in log
+    assert (model_id in log) == (agent_name == "opencode")
 
 
 def test_acp_worker_nonexistent_worktree(tmp_path: Path) -> None:

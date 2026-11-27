@@ -2,7 +2,7 @@ import json
 import sqlite3
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +33,7 @@ class Store:
     def __init__(self, db_path: Path | str):
         self.path = Path(db_path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.connect() as db:
+        with closing(self.connect()) as db:
             db.executescript("""
                 PRAGMA journal_mode=WAL;
                 CREATE TABLE IF NOT EXISTS schema_version(version INTEGER PRIMARY KEY);
@@ -146,7 +146,7 @@ class Store:
             db.close()
 
     def all(self, sql: str, args: tuple = ()) -> list[dict[str, Any]]:
-        with self.connect() as db:
+        with closing(self.connect()) as db:
             return [dict(row) for row in db.execute(sql, args)]
 
     def one(self, sql: str, args: tuple = ()) -> dict[str, Any]:
@@ -178,6 +178,17 @@ class Store:
     ) -> None:
         with self.tx() as db:
             self.event_tx(db, project_id, job_id, kind, detail)
+
+    def record_acp_error(
+        self, project_id: str, job_id: str, stage: str, agent: Any, error: Exception, **context: Any
+    ) -> None:
+        self.event(project_id, job_id, "acp.error", {
+            "stage": stage,
+            "harness": getattr(agent, "agent_name", None),
+            "model_id": getattr(agent, "model", None),
+            "error": str(error)[-10000:],
+            **context,
+        })
 
     def create_project(self, payload: Any) -> dict[str, Any]:
         project = uid()

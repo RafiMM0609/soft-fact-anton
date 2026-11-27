@@ -13,6 +13,7 @@ import time
 from typing import Any, Callable
 
 from acp.agent import AcpAgent
+from acp.protocol import AcpError
 from acp.worker import AcpWorker
 from factory.models import Plan, Review, Task
 from factory.products import (
@@ -325,6 +326,11 @@ class ParallelBuilder:
 
                     # Case A: Worker execution failure or unhandled exception
                     if not outcome.success:
+                        if self.store and isinstance(outcome.error, AcpError):
+                            self.store.record_acp_error(
+                                project_id, job_id, "worker", self.worker, outcome.error,
+                                task_id=t.id, attempt=attempts[t.id],
+                            )
                         if self.store and outcome.worker_id:
                             self.store.set_worker(
                                 outcome.worker_id,
@@ -386,6 +392,11 @@ class ParallelBuilder:
                                 )
                             break
                         except Exception as exc:
+                            if self.store and isinstance(exc, (AcpError, ValueError)):
+                                self.store.record_acp_error(
+                                    project_id, job_id, "review", self.agent, exc,
+                                    task_id=t.id, attempt=attempts[t.id], review_attempt=review_attempt + 1,
+                                )
                             logger.warning(
                                 "Diff review attempt %d for task %s failed with exception: %s",
                                 review_attempt + 1,

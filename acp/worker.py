@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 from acp.client import AcpClient
 from acp.harness import acp_command, isolated_env
-from acp.protocol import AcpError, AcpProcessError, AcpTimeoutError, JsonRpcNotification
+from acp.protocol import AcpError, AcpProcessError, AcpRpcError, AcpTimeoutError, JsonRpcNotification
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +149,9 @@ class AcpWorker:
         with tempfile.TemporaryDirectory(prefix="acp_worker_home_") as tmp_home_dir:
             temp_home = Path(tmp_home_dir)
             env = isolated_env(worktree=worktree_path, temp_home=temp_home)
+            is_opencode = self.agent_name.strip().lower() == "opencode"
+            if is_opencode:
+                env["OPENCODE_PURE"] = "1"
 
             cmd = self.command or acp_command(
                 worktree=worktree_path,
@@ -212,11 +215,26 @@ class AcpWorker:
                             raise AcpWorkerError("Task cancelled", output="\n".join(transcript_lines))
 
                         await client.initialize()
-                        session_id = await client.session_new(cwd=str(worktree_path))
+                        session_options = {"mcpServers": []} if is_opencode else {}
+                        session_id = await client.session_new(cwd=str(worktree_path), **session_options)
 
                         if cancelled():
                             await client.session_cancel(session_id)
                             raise AcpWorkerError("Task cancelled", output="\n".join(transcript_lines))
+
+                        if is_opencode and self.model:
+                            try:
+                                await client.call(
+                                    "session/set_config_option",
+                                    {"sessionId": session_id, "configId": "model", "value": self.model},
+                                )
+                            except AcpRpcError as exc:
+                                if exc.code != -32601:
+                                    raise
+                                await client.call(
+                                    "session/set_model",
+                                    {"sessionId": session_id, "modelId": self.model},
+                                )
 
                         result = await client.session_prompt(
                             session_id, prompt_text, timeout=float(timeout)
@@ -233,7 +251,10 @@ class AcpWorker:
                         return "\n".join(transcript_lines)
                 except (AcpProcessError, AcpTimeoutError) as exc:
                     out = "\n".join(transcript_lines)
-                    raise AcpWorkerError(f"ACP Worker error: {exc}", output=out) from exc
+                    detail = str(exc)
+                    if isinstance(exc, AcpTimeoutError) and client.stderr_lines:
+                        detail += "\nStderr tail:\n" + "\n".join(client.stderr_lines[-20:])[-6000:]
+                    raise AcpWorkerError(f"ACP Worker error: {detail}", output=out) from exc
                 except AcpWorkerError:
                     raise
                 except Exception as exc:

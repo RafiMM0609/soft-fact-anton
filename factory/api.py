@@ -9,6 +9,7 @@ import json
 import logging
 import mimetypes
 import os
+import re
 from pathlib import Path
 import secrets
 import shutil
@@ -85,6 +86,7 @@ class BuildRequest(BaseModel):
         pattern=r"^(agy|opencode|codex|pi|claude)$",
         description="Optional ACP harness override for this build",
     )
+    model_id: str | None = None
 
 
 class AdjustPreviewRequest(BaseModel):
@@ -369,13 +371,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     parsed_payload = (
                         json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
                     )
-                    if isinstance(parsed_payload, dict) and parsed_payload.get("harness"):
-                        job_harness = str(parsed_payload["harness"]).strip().lower()
-                        if job_harness and job_harness != settings.harness.strip().lower():
-                            job_settings = dataclasses.replace(settings, harness=job_harness)
-                            job_engine = Engine(settings=job_settings, store=store)
-                except Exception:
-                    pass
+                except json.JSONDecodeError:
+                    parsed_payload = None
+                if isinstance(parsed_payload, dict) and parsed_payload.get("harness"):
+                    job_harness = str(parsed_payload["harness"]).strip().lower()
+                    job_model = parsed_payload.get("model_id") if job_harness == "opencode" else None
+                    if job_harness and (job_harness != settings.harness.strip().lower() or job_model):
+                        job_settings = dataclasses.replace(
+                            settings, harness=job_harness, opencode_model=job_model
+                        )
+                        job_engine = Engine(settings=job_settings, store=store)
 
             logger.info("Starting background build for project %s (job %s)", project_id, job_id)
             await asyncio.to_thread(
@@ -387,6 +392,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             logger.info("Background build completed successfully for job %s", job_id)
         except Exception as exc:
             logger.exception("Background build failed for job %s: %s", job_id, exc)
+            unfinished = store.all("SELECT id FROM jobs WHERE id=? AND state IN ('queued', 'running')", (job_id,))
+            if unfinished:
+                store.finish(job_id, state="failed", error=str(exc))
         finally:
             active_tasks.pop(job_id, None)
 
@@ -396,6 +404,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         _auth: str = Depends(require_operator_auth),
     ) -> dict[str, Any]:
         """Trigger an autonomous product build in the background."""
+        active_harness = (req.harness or settings.harness).strip().lower()
+        model_id = (req.model_id or "").strip()
+        if model_id:
+            if active_harness != "opencode":
+                raise HTTPException(status_code=422, detail="Model ID is only supported for OpenCode")
+            if not re.fullmatch(r"[\w.+:@-]+(?:/[\w.+:@-]+)+", model_id, flags=re.ASCII):
+                raise HTTPException(status_code=422, detail="Use provider/model format for OpenCode Model ID")
         product_id = req.product or f"product-{secrets.token_hex(4)}"
 
         # Get or create project
@@ -410,11 +425,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 store.event_tx(db, product_id, None, "project.created", {"name": product_id})
 
         # Enqueue job
-        active_harness = req.harness or settings.harness
+        payload = {"brief": req.brief, "profile": req.profile, "harness": active_harness}
+        if model_id:
+            payload["model_id"] = model_id
         job = store.enqueue(
             product_id,
             kind="build",
-            payload={"brief": req.brief, "profile": req.profile, "harness": active_harness},
+            payload=payload,
         )
         job_id = job["id"]
 
@@ -454,6 +471,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 payload_data = row["payload"]
 
         tasks = store.tasks_for_job(job_id)
+        acp_errors = store.all(
+            "SELECT seq, created, detail FROM events WHERE project_id=? AND job_id=? "
+            "AND kind='acp.error' ORDER BY seq DESC",
+            (row["project_id"], job_id),
+        )
+        for event in acp_errors:
+            event["detail"] = json.loads(event["detail"])
 
         return {
             "id": row["id"],
@@ -469,6 +493,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "result": result_data,
             "artifact": result_data,
             "tasks": tasks,
+            "acp_errors": acp_errors,
         }
 
     @app.post("/api/jobs/{job_id}/cancel")

@@ -66,6 +66,7 @@ class Settings:
         default_factory=lambda: int(os.getenv("FACTORY_REVIEW_TIMEOUT", "600"))
     )
     operator_token: str | None = None
+    opencode_model: str | None = None
 
     def __post_init__(self) -> None:
         self.data = Path(self.data)

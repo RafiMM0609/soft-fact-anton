@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import threading
 import time
@@ -388,8 +389,9 @@ def test_merge_conflict_handling_and_retry(test_setup: dict[str, Any]):
     assert "Appended by B" in content
 
 
-def test_max_repairs_exceeded(test_setup: dict[str, Any]):
-    """Test that repeatedly rejected task fails after max_repairs."""
+@pytest.mark.parametrize("worker_fails", [False, True])
+def test_max_repairs_exceeded(test_setup: dict[str, Any], worker_fails: bool):
+    """Test that exhausted attempts fail and ACP errors remain available."""
     data_dir = test_setup["data_dir"]
     store = test_setup["store"]
     project = test_setup["project"]
@@ -401,6 +403,8 @@ def test_max_repairs_exceeded(test_setup: dict[str, Any]):
     plan = Plan(summary="Failing plan", tasks=[task])
 
     def mock_worker_runner(cmd: list[str], cwd: Path | None = None, **kwargs: Any) -> str:
+        if worker_fails:
+            raise AcpWorkerError("Model unavailable")
         assert cwd is not None
         (cwd / "fail.py").write_text("# incomplete\n", encoding="utf-8")
         return "done"
@@ -412,7 +416,7 @@ def test_max_repairs_exceeded(test_setup: dict[str, Any]):
     worker = AcpWorker(runner=mock_worker_runner, harness_path="/usr/bin/agy")
     builder = ParallelBuilder(settings=settings, store=store, worker=worker)
 
-    with pytest.raises(ParallelBuildError, match="exceeded maximum repair attempts|rejected after 2 attempts"):
+    with pytest.raises(ParallelBuildError, match="failed after 2 attempts|rejected after 2 attempts"):
         builder.build_tasks(
             project=project,
             job=job,
@@ -423,6 +427,8 @@ def test_max_repairs_exceeded(test_setup: dict[str, Any]):
 
     t_rec = store.task(job["id"], "failing_task")
     assert t_rec["state"] == "failed"
+    errors = store.all("SELECT detail FROM events WHERE job_id=? AND kind='acp.error' ORDER BY seq", (job["id"],))
+    assert [json.loads(event["detail"])["attempt"] for event in errors] == ([1, 2] if worker_fails else [])
 
     # Verify worktree directory is cleaned up
     root = ensure_repo(data_dir, project["id"])
