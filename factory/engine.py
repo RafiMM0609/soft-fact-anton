@@ -53,15 +53,16 @@ class Engine:
     ) -> None:
         self.settings = settings if settings is not None else Settings()
         self.store = store if store is not None else Store(self.settings.data / "factory.db")
+        resolved_harness = self.settings.resolve_harness_path()
         self.agent = (
             agent
             if agent is not None
-            else AcpAgent(agent_name=self.settings.harness, harness_path=self.settings.agy)
+            else AcpAgent(agent_name=self.settings.harness, harness_path=resolved_harness)
         )
         self.worker = (
             worker
             if worker is not None
-            else AcpWorker(agent_name=self.settings.harness, harness_path=self.settings.agy)
+            else AcpWorker(agent_name=self.settings.harness, harness_path=resolved_harness)
         )
         self.verifier = verifier if verifier is not None else Verifier()
         self.tester = tester if tester is not None else Tester()
@@ -385,6 +386,14 @@ class Engine:
 
                 return "\n".join(parts)
 
+            if self.store:
+                self.store.event(
+                    project_id,
+                    job_id,
+                    "build.tasks_started",
+                    {"task_count": len(active_plan.tasks)},
+                )
+
             completed_tasks = self.builder.build_tasks(
                 project=project,
                 job=job,
@@ -397,25 +406,48 @@ class Engine:
             if cancelled():
                 raise RuntimeError("Build cancelled during verification")
 
+            if self.store:
+                self.store.event(project_id, job_id, "verify.started", {})
+
             verifier_ok, verifier_msg = self.verifier.verify(root)
             if not verifier_ok:
                 raise RuntimeError(f"Build verification failed:\n{verifier_msg}")
+
+            if self.store:
+                self.store.event(project_id, job_id, "verify.passed", {})
 
             # 4. Acceptance testing
             if cancelled():
                 raise RuntimeError("Build cancelled during testing")
 
             if active_plan.test_flows:
+                if self.store:
+                    self.store.event(
+                        project_id,
+                        job_id,
+                        "test.started",
+                        {"flow_count": len(active_plan.test_flows)},
+                    )
                 with run_product_server(root) as base_url:
                     tester_ok, test_results = self.tester.run_flows(
                         active_plan.test_flows, base_url=base_url
                     )
                 if not tester_ok:
                     raise RuntimeError(f"Acceptance testing failed:\n{json.dumps(test_results)}")
+                if self.store:
+                    self.store.event(
+                        project_id,
+                        job_id,
+                        "test.passed",
+                        {"flow_count": len(active_plan.test_flows)},
+                    )
             else:
                 test_results = []
 
             # 5. Assemble release artifact bundle and mark job succeeded
+            if self.store:
+                self.store.event(project_id, job_id, "release.packaging", {})
+
             commit_sha = head_commit(root)
             tarball_path = self.settings.data / "artifacts" / project_id / f"{job_id}.tar.gz"
             profile = (

@@ -37,11 +37,38 @@ def clean_markdown_fences(text: str) -> str:
     return s
 
 
+def _extract_ndjson_text(text: str) -> str | None:
+    """Concatenate assistant text chunks from NDJSON event streams (e.g. `opencode run --format json`)."""
+    chunks: list[str] = []
+    saw_event = False
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict) or "type" not in obj:
+            continue
+        saw_event = True
+        part = obj.get("part")
+        if obj.get("type") == "text" and isinstance(part, dict) and isinstance(part.get("text"), str):
+            chunks.append(part["text"])
+        elif isinstance(obj.get("text"), str):
+            chunks.append(obj["text"])
+        elif isinstance(obj.get("content"), str):
+            chunks.append(obj["content"])
+    if saw_event and chunks:
+        return "".join(chunks).strip()
+    return None
+
+
 def parse_schema_output(text: str, schema: type[T]) -> T:
     """Parse text into the target Pydantic schema model.
 
     Handles raw JSON, markdown-wrapped JSON, CLI JSON wrapper dictionaries,
-    leading warning or log lines, and embedded JSON substrings.
+    NDJSON event streams (such as opencode), leading warning lines, and embedded JSON substrings.
     """
     cleaned = clean_markdown_fences(text).strip()
 
@@ -50,6 +77,22 @@ def parse_schema_output(text: str, schema: type[T]) -> T:
         return schema.model_validate_json(cleaned)
     except Exception:
         pass
+
+    # 1b. NDJSON event stream extraction (e.g. `opencode run --format json`)
+    ndjson_text = _extract_ndjson_text(cleaned)
+    if ndjson_text:
+        inner = clean_markdown_fences(ndjson_text).strip()
+        try:
+            return schema.model_validate_json(inner)
+        except Exception:
+            pass
+        n_start = inner.find("{")
+        n_end = inner.rfind("}")
+        if n_start != -1 and n_end > n_start:
+            try:
+                return schema.model_validate_json(inner[n_start : n_end + 1])
+            except Exception:
+                pass
 
     # 2. Extract JSON object even if preceded by warning/logging lines
     start = cleaned.find("{")
@@ -113,24 +156,54 @@ USAGE_KEYS = (
 
 
 def extract_usage(raw_output: str) -> dict[str, int]:
-    """Extract token usage counters from raw agy JSON output if present."""
+    """Extract token usage counters from single JSON or NDJSON (opencode) CLI output."""
     usage: dict[str, int] = {k: 0 for k in USAGE_KEYS}
     if not raw_output:
         return usage
+
     try:
         data = json.loads(raw_output.strip())
     except json.JSONDecodeError:
+        data = None
+
+    if isinstance(data, dict) and isinstance(data.get("usage"), dict):
+        raw_usage = data["usage"]
+        for key in USAGE_KEYS:
+            val = raw_usage.get(key)
+            if isinstance(val, (int, float)):
+                usage[key] = int(val)
         return usage
-    if not isinstance(data, dict):
-        return usage
-    raw_usage = data.get("usage")
-    if not isinstance(raw_usage, dict):
-        return usage
-    for key in USAGE_KEYS:
-        val = raw_usage.get(key)
-        if isinstance(val, (int, float)):
-            usage[key] = int(val)
-    return usage
+
+    # Fallback: scan NDJSON event lines (e.g. `opencode run --format json` step_finish tokens)
+    found_ndjson = False
+    for raw_line in raw_output.splitlines():
+        line = raw_line.strip()
+        if not line or not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        part = obj.get("part")
+        tokens = part.get("tokens") if isinstance(part, dict) else None
+        if not isinstance(tokens, dict):
+            continue
+        found_ndjson = True
+        inp = int(tokens.get("input") or 0)
+        out = int(tokens.get("output") or 0)
+        reasoning = int(tokens.get("reasoning") or 0)
+        cache = tokens.get("cache") if isinstance(tokens.get("cache"), dict) else {}
+        cache_read = int(cache.get("read") or 0)
+        total = int(tokens.get("total") or (inp + out + reasoning))
+        usage["input_tokens"] += inp
+        usage["output_tokens"] += out
+        usage["thinking_tokens"] += reasoning
+        usage["cache_read_tokens"] += cache_read
+        usage["total_tokens"] += total
+
+    return usage if found_ndjson else usage
 
 
 class AcpAgent:

@@ -53,6 +53,7 @@ class AcpClient:
         self.process: asyncio.subprocess.Process | None = None
         self._pending_requests: dict[int | str, asyncio.Future[JsonRpcResponse]] = {}
         self._notification_handlers: dict[str, list[Callable[..., Any]]] = {}
+        self._request_handlers: dict[str, Callable[..., Any]] = {}
         self._notification_waiters: list[tuple[str | None, asyncio.Future[JsonRpcNotification]]] = []
         self.notifications: list[JsonRpcNotification] = []
         self.stderr_lines: list[str] = []
@@ -152,6 +153,10 @@ class AcpClient:
         """
         handlers = self._notification_handlers.setdefault(method, [])
         handlers.append(handler)
+
+    def on_request(self, method: str, handler: Callable[..., Any]) -> None:
+        """Register a handler for incoming JSON-RPC server-to-client requests."""
+        self._request_handlers[method] = handler
 
     async def wait_for_notification(
         self, method: str | None = None, timeout: float = 10.0
@@ -287,6 +292,69 @@ class AcpClient:
             except Exception as exc:
                 logger.exception("Error in notification handler for %s: %s", notification.method, exc)
 
+    async def _handle_incoming_request(
+        self,
+        req_id: int | str,
+        method: str,
+        params: dict[str, Any],
+    ) -> None:
+        """Handle incoming JSON-RPC requests from the ACP server (e.g. permission prompts)."""
+        handler = self._request_handlers.get(method) or self._request_handlers.get("*")
+        if handler is not None:
+            try:
+                res = handler(method, params) if handler is self._request_handlers.get("*") else handler(params)
+                if inspect.isawaitable(res):
+                    res = await res
+                await self._write_message({"jsonrpc": "2.0", "id": req_id, "result": res})
+            except Exception as exc:
+                logger.exception("Error in request handler for %s: %s", method, exc)
+                await self._write_message(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {"code": -32603, "message": str(exc)},
+                    }
+                )
+            return
+
+        if method == "session/request_permission":
+            options = params.get("options") if isinstance(params, dict) else None
+            selected_id: str | None = None
+            if isinstance(options, list) and options:
+                for preferred_kind in ("allow_always", "allow_once"):
+                    for opt in options:
+                        if isinstance(opt, dict) and opt.get("kind") == preferred_kind and opt.get("optionId"):
+                            selected_id = str(opt["optionId"])
+                            break
+                    if selected_id:
+                        break
+                if not selected_id and isinstance(options[0], dict) and options[0].get("optionId"):
+                    selected_id = str(options[0]["optionId"])
+
+            outcome = (
+                {"outcome": "selected", "optionId": selected_id}
+                if selected_id
+                else {"outcome": "cancelled"}
+            )
+            try:
+                await self._write_message(
+                    {"jsonrpc": "2.0", "id": req_id, "result": {"outcome": outcome}}
+                )
+            except AcpProcessError:
+                pass
+            return
+
+        try:
+            await self._write_message(
+                {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {"code": -32601, "message": f"Method not supported by client: {method}"},
+                }
+            )
+        except AcpProcessError:
+            pass
+
     async def _stdout_loop(self) -> None:
         """Continuously read line-delimited JSON messages from subprocess stdout."""
         assert self.process is not None and self.process.stdout is not None
@@ -316,9 +384,20 @@ class AcpClient:
             if not isinstance(data, dict):
                 continue
 
-            # Identify message type: response vs notification
+            # Identify message type: server request vs response vs notification
             req_id = data.get("id")
-            if req_id is not None:
+            has_id = req_id is not None
+            has_method = "method" in data
+            if has_id and has_method:
+                params = data.get("params")
+                asyncio.create_task(
+                    self._handle_incoming_request(
+                        req_id,
+                        str(data["method"]),
+                        params if isinstance(params, dict) else {},
+                    )
+                )
+            elif has_id:
                 # Response message
                 fut = self._pending_requests.pop(req_id, None)
                 if fut is None and isinstance(req_id, int):
@@ -332,7 +411,7 @@ class AcpClient:
                         fut.set_result(response)
                     except Exception as exc:
                         fut.set_exception(exc)
-            elif "method" in data:
+            elif has_method:
                 # Notification message
                 try:
                     notification = JsonRpcNotification.model_validate(data)

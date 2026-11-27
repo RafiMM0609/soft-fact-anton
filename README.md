@@ -1,6 +1,6 @@
 # ACP Software Factory (`acp-factory`)
 
-An autonomous software factory powered by the **Agent Client Protocol (ACP)** and local authenticated CLI harnesses (**`agy`**, `codex`, `pi`, `claude`), completely free from direct API keys.
+An autonomous software factory powered by the **Agent Client Protocol (ACP)** and local authenticated CLI harnesses (**`agy`**, **`opencode`**, `codex`, `pi`, `claude`), completely free from direct API keys.
 
 Adopts the battle-tested architecture of `caca` (*Anton Software Factory*):
 - **DAG Task Planner**: Structured planning decomposing briefs into directed acyclic graphs of tasks with explicit dependencies and acceptance criteria.
@@ -25,7 +25,7 @@ Operator Brief → AcpAgent Planner → Plan DAG → Parallel Git Worktrees (Acp
 ### 1. Requirements
 - Python 3.12+ and `uv`
 - Git 2.40+
-- Authenticated local harness: `agy` at `/home/ubuntu/.local/bin/agy` (or `codex`, `pi`, `claude`)
+- Authenticated local harness: `agy` auto-detected from `PATH` or `~/.local/bin/agy` (overridable via `FACTORY_AGY`, or switch via `FACTORY_HARNESS=opencode|codex|pi|claude`)
 
 ### 2. Diagnostics
 ```bash

@@ -84,6 +84,36 @@ def test_settings_env_overrides(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert s.operator_token == "secret-test-token-12345"
 
 
+def test_settings_auto_detect_and_non_agy_harness(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake_home = tmp_path / "home"
+    bin_dir = fake_home / ".local" / "bin"
+    bin_dir.mkdir(parents=True)
+    fake_agy = bin_dir / "agy"
+    fake_agy.write_text("#!/bin/sh\necho agy\n")
+    fake_agy.chmod(0o755)
+    fake_codex = bin_dir / "codex"
+    fake_codex.write_text("#!/bin/sh\necho codex\n")
+    fake_codex.chmod(0o755)
+
+    monkeypatch.delenv("FACTORY_AGY", raising=False)
+    monkeypatch.delenv("FACTORY_HARNESS", raising=False)
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+    s_default = Settings(data=tmp_path / "data1")
+    assert s_default.agy == str(fake_agy.resolve())
+    assert s_default.resolve_harness_path() == str(fake_agy.resolve())
+
+    monkeypatch.setenv("FACTORY_HARNESS", "codex")
+    monkeypatch.setenv("FACTORY_CODEX", str(fake_codex))
+    s_codex = Settings(data=tmp_path / "data2")
+    engine = Engine(settings=s_codex)
+    assert engine.agent.harness_path == str(fake_codex.resolve())
+    assert engine.worker.harness_path == str(fake_codex.resolve())
+
+
 # ==============================================================================
 # 2. Verifier Tests
 # ==============================================================================

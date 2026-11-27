@@ -1,212 +1,869 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" data-theme="dark" data-client-mode="false">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ACP Software Factory — Workspace</title>
-  <link rel="stylesheet" href="/static/style.css?v=3" />
+  <title>ACP Software Factory — Autonomous Delivery Workspace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css?v=5" />
 </head>
 <body>
   <div class="layout">
+    <!-- Sidebar -->
     <aside class="sidebar">
-      <a class="brand" href="/">
-        <span class="brand-mark">A</span>
-        <span>acp-factory<span class="brand-sub">SOFTWARE FACTORY</span></span>
-      </a>
+      <div class="sidebar-top">
+        <a class="brand" href="/">
+          <span class="brand-mark" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+              <polyline points="2 17 12 22 22 17"></polyline>
+              <polyline points="2 12 12 17 22 12"></polyline>
+            </svg>
+          </span>
+          <span class="brand-text">
+            <span id="brand-name" class="brand-name">acp-factory</span>
+            <span id="brand-sub" class="brand-sub">AUTONOMOUS STUDIO</span>
+          </span>
+        </a>
 
-      <div>
-        <div class="nav-label">RUANG KERJA</div>
-        <div class="nav-group">
-          <button class="nav active" data-tab="overview">◈ Proyek</button>
-          <button class="nav" data-tab="jobs">⚙ Jobs &amp; Token</button>
-          <button class="nav" data-tab="events">≡ Event Ledger</button>
-        </div>
+        <nav class="nav-section" aria-label="Navigasi Utama">
+          <div class="nav-label" data-i18n="nav.workspace">WORKSPACE</div>
+          <div class="nav-group">
+            <button class="nav active" data-tab="overview" type="button">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+                <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+                <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+                <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+              </svg>
+              <span data-i18n="nav.projects">Proyek</span>
+              <span id="nav-count-projects" class="nav-pill" hidden>0</span>
+            </button>
+            <button class="nav" data-tab="jobs" type="button">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+              </svg>
+              <span data-i18n="nav.jobs">Jobs &amp; Telemetri</span>
+              <span id="nav-count-active" class="nav-pill live" hidden>0</span>
+            </button>
+            <button class="nav" data-tab="events" type="button" data-operator-only>
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+              </svg>
+              <span data-i18n="nav.events">Event Ledger</span>
+            </button>
+          </div>
+        </nav>
       </div>
 
-      <div class="sidebar-note">
-        <div><span id="sidebar-dot" class="dot"></span><span id="sidebar-status">Menunggu koneksi</span></div>
-        <div id="sidebar-meta" class="mono" style="margin-top:6px;">Single FastAPI Backend</div>
+      <div class="sidebar-footer">
+        <div class="status-card">
+          <div class="status-row">
+            <span class="status-indicator">
+              <span id="sidebar-dot" class="dot"></span>
+              <span id="sidebar-status" data-i18n="top.connecting">Menghubungkan...</span>
+            </span>
+            <span id="sidebar-version" class="mono muted-xs">v0.1</span>
+          </div>
+          <div id="sidebar-meta" class="mono muted-xs" style="margin-top:6px;">ACP Local Harness</div>
+          <div class="status-meta-row" id="sidebar-runtime-row" hidden>
+            <span id="sidebar-harness-pill" class="micro-pill">-</span>
+            <span id="sidebar-py-pill" class="micro-pill">Py -</span>
+          </div>
+        </div>
       </div>
     </aside>
 
+    <!-- Main Column -->
     <div class="main-col">
       <header class="topbar">
-        <div class="crumb">Ruang kerja / <strong id="crumb-title">Proyek</strong></div>
+        <div class="topbar-left">
+          <div class="crumb">
+            <span class="crumb-root" data-i18n="nav.crumb_root">Workspace</span>
+            <span class="crumb-sep">/</span>
+            <strong id="crumb-title">Proyek</strong>
+          </div>
+          <span id="client-label-pill" class="client-pill" hidden></span>
+        </div>
+
         <div class="header-right">
-          <span id="connection-text" class="mono">Belum terhubung</span>
-          <button id="refresh-btn" class="secondary" type="button" hidden>Refresh</button>
-          <button id="logout-btn" class="quiet" type="button" hidden>Putuskan</button>
+          <button id="client-mode-btn" class="icon-pill" type="button" hidden title="Toggle Client Presentation Mode">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+            <span id="client-mode-label">Client View</span>
+          </button>
+
+          <button id="poll-toggle-btn" class="icon-pill" type="button" hidden title="Jeda atau lanjutkan live stream">
+            <span class="live-dot" id="poll-dot"></span>
+            <span id="poll-label" data-i18n="top.live">Live</span>
+          </button>
+
+          <span id="connection-badge" class="conn-badge">
+            <span id="connection-text" data-i18n="top.disconnected">Belum terhubung</span>
+          </span>
+
+          <button id="lang-toggle-btn" class="icon-btn mono" type="button" title="Switch Language (ID / EN)" style="width:auto;padding:0 9px;font-size:0.74rem;font-weight:700;">ID</button>
+
+          <button id="branding-btn" class="icon-btn" type="button" hidden data-operator-only title="White-Label Branding">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </button>
+
+          <button id="theme-toggle-btn" class="icon-btn" type="button" title="Ganti tema Gelap / Terang" aria-label="Ganti tema">
+            <svg id="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" hidden>
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <svg id="theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+          </button>
+
+          <button id="refresh-btn" class="secondary sm" type="button" hidden>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+            <span data-i18n="top.refresh">Refresh</span>
+          </button>
+          <button id="logout-btn" class="quiet sm" type="button" hidden data-i18n="top.disconnect">Putuskan</button>
         </div>
       </header>
 
       <main class="content">
-        <!-- Login / Connect -->
-        <section id="login-view" class="card login-box">
-          <div class="eyebrow">RUANG KERJA SOFTWARE ANDA</div>
-          <h1>Dari brief ke rilis terverifikasi.</h1>
-          <p class="sub">Masukkan Operator Token (dari <code>data/.operator_token</code>) untuk mengelola build, memantau worker, dan melihat akumulasi token.</p>
-          <form id="connect-form" style="display:grid;gap:12px;">
-            <input id="token-input" type="password" autocomplete="off" required placeholder="Tempel operator token Anda" />
-            <button class="primary" type="submit">Hubungkan ke factory →</button>
-          </form>
-          <div id="login-error" class="mono" style="color:var(--err);margin-top:10px;"></div>
+        <!-- Login / Showcase Welcome -->
+        <section id="login-view" class="login-shell">
+          <div class="login-grid">
+            <div class="login-pitch">
+              <div class="eyebrow-pill">
+                <span class="dot ok"></span>
+                <span data-i18n="login.eyebrow">AUTONOMOUS SOFTWARE FACTORY</span>
+              </div>
+              <h1 class="hero-title" data-i18n="login.title">Dari brief produk ke rilis terverifikasi, secara otonom.</h1>
+              <p class="hero-sub" data-i18n="login.sub">
+                Orkestrasi perencanaan arsitektur DAG, eksekusi worker paralel di Git worktree terisolasi,
+                review diff otomatis, hingga pengujian Playwright dan pengemasan rilis dalam satu ruang kerja.
+              </p>
+
+              <div class="pillar-grid">
+                <div class="pillar">
+                  <div class="pillar-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="6" cy="6" r="3"></circle><circle cx="18" cy="6" r="3"></circle><circle cx="12" cy="18" r="3"></circle>
+                      <line x1="8.5" y1="7.5" x2="11" y2="15"></line><line x1="15.5" y1="7.5" x2="13" y2="15"></line>
+                    </svg>
+                  </div>
+                  <div>
+                    <strong data-i18n="login.p1_title">DAG Task Planner</strong>
+                    <span data-i18n="login.p1_desc">Dekomposisi brief menjadi graf dependensi &amp; kriteria penerimaan terstruktur.</span>
+                  </div>
+                </div>
+                <div class="pillar">
+                  <div class="pillar-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle>
+                      <path d="M18 9a9 9 0 0 1-9 9"></path>
+                    </svg>
+                  </div>
+                  <div>
+                    <strong data-i18n="login.p2_title">Isolated Git Worktrees</strong>
+                    <span data-i18n="login.p2_desc">Setiap worker berjalan di cabang terisolasi dengan wave barrier &amp; auto-repair.</span>
+                  </div>
+                </div>
+                <div class="pillar">
+                  <div class="pillar-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                      <polyline points="9 12 11 14 15 10"></polyline>
+                    </svg>
+                  </div>
+                  <div>
+                    <strong data-i18n="login.p3_title">ReviewGuard &amp; Secret Gate</strong>
+                    <span data-i18n="login.p3_desc">Audit diff objektif dan pemindaian kebocoran kredensial sebelum rilis.</span>
+                  </div>
+                </div>
+                <div class="pillar">
+                  <div class="pillar-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                    </svg>
+                  </div>
+                  <div>
+                    <strong data-i18n="login.p4_title">Playwright &amp; Release Bundle</strong>
+                    <span data-i18n="login.p4_desc">Uji alur API &amp; browser otomatis, lalu kemas .tar.gz ber-SHA256.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card login-card">
+              <div class="eyebrow" data-i18n="login.auth_eyebrow">OTENTIKASI OPERATOR</div>
+              <h2 class="login-heading" data-i18n="login.auth_title">Masuk ke Workspace</h2>
+              <p class="sub" data-i18n="login.auth_sub">
+                Gunakan Operator Token dari data/.operator_token untuk mengakses orkestrator, memantau worker, dan mengunduh artifak rilis.
+              </p>
+              <form id="connect-form" class="stack-md">
+                <label class="field-label">
+                  <span data-i18n="login.token_label">Operator Token</span>
+                  <div class="input-with-action">
+                    <input id="token-input" type="password" autocomplete="off" required data-i18n-placeholder="login.token_placeholder" placeholder="Tempel operator token Anda..." />
+                    <button id="toggle-token-vis" class="input-action-btn" type="button">Tampil</button>
+                  </div>
+                </label>
+                <button id="connect-submit-btn" class="primary lg" type="submit">
+                  <span data-i18n="login.submit">Hubungkan ke Factory</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline>
+                  </svg>
+                </button>
+              </form>
+              <div id="login-error" class="inline-error" role="alert"></div>
+            </div>
+          </div>
         </section>
 
         <!-- Overview -->
-        <section id="overview-view" hidden style="display:grid;gap:18px;">
+        <section id="overview-view" hidden class="view-stack">
           <div class="heading">
             <div>
-              <div class="eyebrow">BANGUN DENGAN NIAT</div>
-              <h1>Proyek</h1>
+              <div class="eyebrow" data-i18n="ov.eyebrow">PORTFOLIO PRODUK</div>
+              <h1 data-i18n="ov.title">Proyek &amp; Rilis</h1>
+              <p class="sub-compact" data-i18n="ov.sub">Kelola siklus hidup build otonom, revisi inkremental, dan artifak terverifikasi.</p>
             </div>
-            <button id="new-project-btn" class="primary" type="button">+ Proyek baru</button>
+            <div class="heading-actions">
+              <button id="new-project-btn" class="primary" type="button">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span data-i18n="ov.new_project">Proyek Baru</span>
+              </button>
+            </div>
           </div>
 
           <div class="metrics">
             <div class="card metric">
-              <small>PROYEK</small>
+              <div class="metric-head">
+                <small data-i18n="ov.kpi_projects">TOTAL PROYEK</small>
+                <span class="metric-icon blue">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg>
+                </span>
+              </div>
               <strong id="m-projects">0</strong>
               <div class="meta" id="m-harness">Harness: -</div>
             </div>
+
             <div class="card metric">
-              <small>WORKER BUILD</small>
+              <div class="metric-head">
+                <small data-i18n="ov.kpi_jobs">WORKER BUILD</small>
+                <span class="metric-icon green">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                </span>
+              </div>
               <strong id="m-jobs">0</strong>
-              <div class="meta" id="m-jobs-sub">aktif: 0 | sukses: 0</div>
+              <div class="meta" id="m-jobs-sub">aktif: 0 · sukses: 0</div>
             </div>
-            <div class="card metric">
-              <small>TOTAL TOKEN</small>
+
+            <!-- Operator-only metrics -->
+            <div class="card metric" data-operator-only>
+              <div class="metric-head">
+                <small data-i18n="ov.kpi_tokens">KONSUMSI TOKEN</small>
+                <span class="metric-icon purple">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                </span>
+              </div>
               <strong id="m-tokens">0</strong>
-              <div class="meta" id="m-tokens-sub">in: 0 | out: 0 | think: 0</div>
+              <div class="token-bar" id="m-token-bar" aria-hidden="true"></div>
+              <div class="meta" id="m-tokens-sub">in: 0 · out: 0 · think: 0</div>
             </div>
-            <div class="card metric">
-              <small>MEMORI VPS</small>
+
+            <div class="card metric" data-operator-only>
+              <div class="metric-head">
+                <small data-i18n="ov.kpi_memory">MEMORI HOST</small>
+                <span class="metric-icon amber">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"></rect><rect x="9" y="9" width="6" height="6"></rect></svg>
+                </span>
+              </div>
               <strong id="m-memory">-</strong>
+              <div class="progress-track"><div id="m-memory-bar" class="progress-fill" style="width:0%"></div></div>
               <div class="meta" id="m-cache">cache read: 0 tok</div>
+            </div>
+
+            <!-- Client Presentation Mode metrics -->
+            <div class="card metric" data-client-only>
+              <div class="metric-head">
+                <small data-i18n="ov.kpi_releases">RILIS TERVERIFIKASI</small>
+                <span class="metric-icon green">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><polyline points="9 12 11 14 15 10"></polyline></svg>
+                </span>
+              </div>
+              <strong id="m-releases">0</strong>
+              <div class="meta" id="m-releases-sub" data-i18n="ov.kpi_releases_sub">siap preview &amp; unduh</div>
+            </div>
+
+            <div class="card metric" data-client-only>
+              <div class="metric-head">
+                <small data-i18n="ov.kpi_success_rate">TINGKAT KEBERHASILAN</small>
+                <span class="metric-icon blue">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </span>
+              </div>
+              <strong id="m-success-rate">-</strong>
+              <div class="meta" id="m-success-sub" data-i18n="ov.kpi_success_sub">terverifikasi otomatis</div>
             </div>
           </div>
 
-          <div id="readiness-notice" class="notice" hidden></div>
+          <div id="readiness-notice" class="notice" hidden data-operator-only></div>
+
+          <!-- Filter Toolbar -->
+          <div class="toolbar">
+            <div class="search-wrap">
+              <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input id="project-search" type="search" data-i18n-placeholder="ov.search_placeholder" placeholder="Cari nama proyek, profile, atau brief..." />
+            </div>
+            <div class="filter-pills" id="project-filters">
+              <button class="filter-pill active" data-filter="all" type="button" data-i18n="ov.filter_all">Semua</button>
+              <button class="filter-pill" data-filter="built" type="button" data-i18n="ov.filter_built">Built</button>
+              <button class="filter-pill" data-filter="building" type="button" data-i18n="ov.filter_building">Building</button>
+              <button class="filter-pill" data-filter="other" type="button" data-i18n="ov.filter_other">Lainnya</button>
+            </div>
+          </div>
+
           <div id="project-grid" class="project-grid"></div>
         </section>
 
         <!-- Project Detail -->
-        <section id="detail-view" hidden style="display:grid;gap:18px;">
-          <div>
-            <button id="back-btn" class="quiet" type="button">← Semua proyek</button>
+        <section id="detail-view" hidden class="view-stack">
+          <div class="detail-nav-row">
+            <button id="back-btn" class="quiet sm" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline>
+              </svg>
+              <span data-i18n="det.back">Kembali ke Semua Proyek</span>
+            </button>
           </div>
 
-          <div class="heading">
-            <div style="min-width:0;flex:1;">
-              <div class="eyebrow" id="d-profile">static</div>
-              <h1 id="d-name">-</h1>
-              <p class="sub" id="d-brief" style="margin-bottom:0;"></p>
+          <div class="card detail-hero">
+            <div class="detail-hero-top">
+              <div class="detail-hero-info">
+                <div class="detail-tags">
+                  <span class="profile-chip" id="d-profile">static</span>
+                  <span id="d-state" class="badge">-</span>
+                  <span id="d-created" class="mono muted-xs"></span>
+                </div>
+                <h1 id="d-name">-</h1>
+                <p class="detail-brief" id="d-brief"></p>
+              </div>
+              <div class="detail-hero-actions">
+                <button id="d-preview-btn" class="primary" type="button" hidden>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  </svg>
+                  <span data-i18n="det.preview">Live Preview</span>
+                </button>
+                <button id="d-download-latest-btn" class="secondary" type="button" hidden>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  <span data-i18n="det.download">Unduh Rilis (.tar.gz)</span>
+                </button>
+                <button id="d-edit-btn" class="secondary" type="button" data-operator-only>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                  <span data-i18n="det.edit">Edit Brief</span>
+                </button>
+                <button id="d-rebuild-btn" class="secondary" type="button">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                  </svg>
+                  <span data-i18n="det.rebuild">Build Ulang</span>
+                </button>
+                <button id="d-delete-btn" class="danger" type="button" data-operator-only>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                  <span data-i18n="det.delete">Hapus</span>
+                </button>
+              </div>
             </div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-              <span id="d-state" class="badge">-</span>
-              <button id="d-rebuild-btn" class="secondary" type="button">Build Ulang</button>
+
+            <!-- Connected Delivery Pipeline -->
+            <div class="pipeline-wrap">
+              <div class="pipeline-label" data-i18n="det.pipeline_label">DELIVERY PIPELINE</div>
+              <div id="d-pipeline" class="pipeline"></div>
             </div>
           </div>
 
-          <div id="d-pipeline" class="pipeline"></div>
+          <!-- Project Detail Sub-Tabs -->
+          <div class="detail-tabs" id="detail-tabs" role="tablist">
+            <button class="detail-tab active" data-detail-tab="overview" type="button" data-i18n="det.tab_overview">Ringkasan &amp; Plan DAG</button>
+            <button class="detail-tab" data-detail-tab="jobs" type="button" data-i18n="det.tab_jobs">Jobs &amp; Telemetri</button>
+            <button class="detail-tab" data-detail-tab="code" type="button" data-i18n="det.tab_code">Kode &amp; Hasil Tes</button>
+            <button class="detail-tab" data-detail-tab="adjust" type="button" data-i18n="det.tab_adjust">Revisi / Adjust</button>
+          </div>
 
-          <!-- Adjust / Incremental Feature Panel -->
-          <div class="card" style="display:grid;gap:12px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-              <div>
-                <div class="eyebrow">ADJUST AFTER BUILD</div>
-                <h2 style="margin:2px 0 0;">Revisi / Tambah Fitur</h2>
+          <!-- Sub-Tab 1: Overview & Wave DAG -->
+          <div id="d-tab-overview" class="view-stack">
+            <div id="d-artifact-card" class="card artifact-banner" hidden></div>
+
+            <div id="d-plan-card" class="card" hidden>
+              <div class="card-header">
+                <div>
+                  <div class="eyebrow" data-i18n="plan.eyebrow">ARSITEKTUR &amp; EKSEKUSI</div>
+                  <h2 data-i18n="plan.title">Plan DAG per Gelombang (Waves)</h2>
+                </div>
+                <div id="d-plan-stats" class="detail-tags"></div>
               </div>
-              <span class="mono" style="color:var(--muted);">Cek hierarki domain dulu sebelum eksekusi</span>
+              <p id="d-plan-summary" class="plan-summary"></p>
+              <div id="d-plan-tasks" class="wave-stack"></div>
+              <div id="d-plan-flows-wrap" hidden style="margin-top:16px;">
+                <div class="sub-section-title" data-i18n="plan.flows_title">Acceptance Test Flows</div>
+                <div id="d-plan-flows" class="flow-list"></div>
+              </div>
             </div>
-            <form id="adjust-preview-form" onsubmit="return false;" style="display:grid;gap:10px;">
-              <textarea id="adj-instruction" rows="2" required placeholder="Misal: Ubah form input tambah acara agar ada pilihan kapasitas peserta..."></textarea>
-              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                <button id="adj-preview-btn" class="secondary" type="button">Cek Scope Domain →</button>
-                <span id="adj-status" class="mono" style="color:var(--muted);"></span>
+
+            <div id="d-plan-empty" class="card empty-state" hidden>
+              <strong data-i18n="plan.empty">Rencana arsitektur DAG akan tampil di sini setelah tahap perencanaan selesai.</strong>
+            </div>
+          </div>
+
+          <!-- Sub-Tab 2: Jobs & Telemetry -->
+          <div id="d-tab-jobs" class="view-stack" hidden>
+            <div class="grid-2">
+              <div class="card">
+                <div class="card-header">
+                  <h2 data-i18n="job.history">Riwayat Job</h2>
+                  <span id="d-jobs-count" class="mono muted-xs">0 job</span>
+                </div>
+                <div id="d-jobs" class="list"></div>
               </div>
-            </form>
-            <div id="adj-scope-box" hidden style="display:grid;gap:10px;padding-top:6px;border-top:1px solid var(--border);">
-              <div class="mono" style="color:var(--accent-hover);">Pilih modul / hierarki domain yang dimaksud:</div>
-              <div id="adj-candidates" style="display:grid;gap:8px;"></div>
-              <div style="display:flex;gap:8px;justify-content:flex-end;">
-                <button id="adj-cancel-btn" class="quiet" type="button">Batal</button>
-                <button id="adj-confirm-btn" class="primary" type="button">Konfirmasi &amp; Jalankan Adjust</button>
+              <div class="card">
+                <div class="card-header">
+                  <h2 data-i18n="job.inspector">Inspektor Job</h2>
+                  <span id="d-job-duration" class="mono muted-xs"></span>
+                </div>
+                <div id="d-job-panel" class="stack-sm">
+                  <div class="empty-inline" data-i18n="job.select_hint">Pilih salah satu job di sebelah kiri untuk melihat telemetri token, status task, dan artifak.</div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="grid-2">
+          <!-- Sub-Tab 3: Code Browser & Test Report -->
+          <div id="d-tab-code" class="view-stack" hidden>
             <div class="card">
-              <h2>Riwayat Job &amp; Token</h2>
-              <div id="d-jobs" class="list"></div>
+              <div class="card-header">
+                <div>
+                  <div class="eyebrow" data-i18n="code.tests_eyebrow">VERIFIKASI &amp; ACCEPTANCE</div>
+                  <h2 data-i18n="code.tests_title">Laporan Hasil Pengujian</h2>
+                </div>
+              </div>
+              <div id="d-test-report" class="test-report-grid"></div>
             </div>
+
             <div class="card">
-              <h2>Detail Job Terpilih</h2>
-              <div id="d-job-panel" style="display:grid;gap:10px;">
-                <span class="mono" style="color:var(--muted);">Pilih job di sebelah kiri.</span>
+              <div class="card-header">
+                <div>
+                  <div class="eyebrow" data-i18n="code.files_eyebrow">SOURCE REPOSITORY</div>
+                  <h2 data-i18n="code.files_title">Penjelajah Kode Produk</h2>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <input id="d-file-search" type="search" data-i18n-placeholder="code.files_search" placeholder="Filter nama file..." style="padding:6px 10px;font-size:0.8rem;min-width:190px;" />
+                </div>
+              </div>
+              <div class="code-browser">
+                <div id="d-file-list" class="file-list"></div>
+                <div class="code-pane">
+                  <div class="code-pane-head">
+                    <div style="min-width:0;">
+                      <span id="d-file-path" class="mono" style="font-weight:600;">-</span>
+                      <span id="d-file-meta" class="mono muted-xs" style="margin-left:8px;"></span>
+                    </div>
+                    <button id="d-file-copy-btn" class="secondary sm" type="button" hidden data-i18n="code.copy_file">Salin Kode</button>
+                  </div>
+                  <div id="d-code-viewer" class="code-viewer">
+                    <div class="empty-inline" style="padding:20px;" data-i18n="code.select_file">Pilih file di sebelah kiri untuk melihat isi kode sumber.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sub-Tab 4: Incremental Adjust -->
+          <div id="d-tab-adjust" class="view-stack" hidden>
+            <div class="card adjust-card">
+              <div class="card-header">
+                <div>
+                  <div class="eyebrow" data-i18n="adj.eyebrow">INCREMENTAL DELIVERY</div>
+                  <h2 data-i18n="adj.title">Revisi / Tambah Fitur Setelah Build</h2>
+                </div>
+                <span class="step-badge" data-i18n="adj.badge">2-Step Domain Guard</span>
+              </div>
+              <form id="adjust-preview-form" onsubmit="return false;" class="stack-sm">
+                <textarea id="adj-instruction" rows="3" required data-i18n-placeholder="adj.placeholder" placeholder="Jelaskan perubahan atau fitur tambahan, misal: Tambahkan tombol export CSV pada tabel transaksi dan filter tanggal..."></textarea>
+                <div class="adjust-bar">
+                  <button id="adj-preview-btn" class="secondary" type="button">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <span data-i18n="adj.analyze">1. Analisis Scope Domain</span>
+                  </button>
+                  <span id="adj-status" class="mono muted-xs"></span>
+                </div>
+              </form>
+              <div id="adj-scope-box" hidden class="scope-box">
+                <div class="scope-header">
+                  <strong data-i18n="adj.confirm_title">2. Konfirmasi Modul &amp; File Target</strong>
+                  <span class="mono muted-xs" data-i18n="adj.confirm_sub">Pilih satu atau lebih kandidat domain sebelum worker mulai bekerja</span>
+                </div>
+                <div id="adj-candidates" class="stack-xs"></div>
+                <div class="scope-actions">
+                  <button id="adj-cancel-btn" class="quiet" type="button" data-i18n="adj.cancel">Batal</button>
+                  <button id="adj-confirm-btn" class="primary" type="button" data-i18n="adj.run">Konfirmasi &amp; Jalankan Adjust →</button>
+                </div>
               </div>
             </div>
           </div>
         </section>
 
         <!-- Jobs & Token Tab -->
-        <section id="jobs-view" hidden style="display:grid;gap:18px;">
+        <section id="jobs-view" hidden class="view-stack">
           <div class="heading">
             <div>
-              <div class="eyebrow">TELEMETRI &amp; ARTIFACT</div>
-              <h1>Jobs &amp; Akumulasi Token</h1>
+              <div class="eyebrow" data-i18n="jobs.eyebrow">TELEMETRI &amp; ARTIFAK</div>
+              <h1 data-i18n="jobs.title">Jobs &amp; Akumulasi Token</h1>
+              <p class="sub-compact" data-i18n="jobs.sub">Pantau seluruh antrean build, durasi eksekusi, dan distribusi penggunaan token.</p>
             </div>
           </div>
-          <div id="all-jobs-list" class="list" style="max-height:none;"></div>
+          <div class="toolbar">
+            <div class="search-wrap">
+              <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input id="job-search" type="search" data-i18n-placeholder="jobs.search_placeholder" placeholder="Cari project ID atau job ID..." />
+            </div>
+            <div class="filter-pills" id="job-filters">
+              <button class="filter-pill active" data-filter="all" type="button" data-i18n="ov.filter_all">Semua</button>
+              <button class="filter-pill" data-filter="active" type="button" data-i18n="jobs.filter_active">Aktif</button>
+              <button class="filter-pill" data-filter="succeeded" type="button" data-i18n="jobs.filter_succeeded">Sukses</button>
+              <button class="filter-pill" data-filter="failed" type="button" data-i18n="jobs.filter_failed">Gagal</button>
+            </div>
+          </div>
+          <div id="all-jobs-list" class="list-full"></div>
         </section>
 
         <!-- Events Tab -->
-        <section id="events-view" hidden style="display:grid;gap:18px;">
+        <section id="events-view" hidden class="view-stack">
           <div class="heading">
             <div>
-              <div class="eyebrow">AUDIT TRAIL</div>
-              <h1>Event Ledger</h1>
+              <div class="eyebrow" data-i18n="evt.eyebrow">AUDIT TRAIL</div>
+              <h1 data-i18n="evt.title">Event Ledger</h1>
+              <p class="sub-compact" data-i18n="evt.sub">Catatan kronologis setiap peristiwa perencanaan, eksekusi worker, dan rilis.</p>
+            </div>
+            <div class="heading-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button id="export-events-json" class="secondary sm" type="button" data-i18n="evt.export_json">Export JSON</button>
+              <button id="export-events-csv" class="secondary sm" type="button" data-i18n="evt.export_csv">Export CSV</button>
             </div>
           </div>
-          <div id="events-list" class="list" style="max-height:none;"></div>
+          <div class="toolbar">
+            <div class="search-wrap">
+              <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input id="event-search" type="search" data-i18n-placeholder="evt.search_placeholder" placeholder="Filter jenis event atau project ID..." />
+            </div>
+            <div class="filter-pills" id="event-cat-filters">
+              <button class="filter-pill active" data-cat="all" type="button" data-i18n="evt.cat_all">Semua</button>
+              <button class="filter-pill" data-cat="build" type="button" data-i18n="evt.cat_build">Build</button>
+              <button class="filter-pill" data-cat="plan" type="button" data-i18n="evt.cat_plan">Plan</button>
+              <button class="filter-pill" data-cat="task" type="button" data-i18n="evt.cat_task">Worker/Task</button>
+              <button class="filter-pill" data-cat="error" type="button" data-i18n="evt.cat_error">Error</button>
+            </div>
+          </div>
+          <div id="events-list" class="list-full"></div>
         </section>
       </main>
     </div>
   </div>
 
-  <!-- Modal New Build -->
-  <div id="build-modal" class="modal-backdrop" hidden>
+  <!-- Modal: New Build -->
+  <div id="build-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="card modal">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <h2 style="margin:0;">Buat &amp; Bangun Proyek Baru</h2>
-        <button id="close-modal-btn" class="quiet" type="button">✕</button>
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow" data-i18n="mod.new_eyebrow">NEW AUTONOMOUS BUILD</div>
+          <h2 id="modal-title" data-i18n="mod.new_title">Buat &amp; Bangun Proyek Baru</h2>
+        </div>
+        <button id="close-modal-btn" class="icon-btn" type="button" aria-label="Tutup modal">✕</button>
       </div>
-      <form id="build-form">
-        <label>
-          Nama Produk (opsional)
-          <input id="f-product" type="text" placeholder="misal: nexus-kanban" />
+
+      <div class="preset-bar">
+        <span class="preset-label" data-i18n="mod.preset_label">Contoh Cepat (Demo):</span>
+        <div class="preset-chips">
+          <button type="button" class="preset-chip" data-preset="landing">Landing Page Korporat</button>
+          <button type="button" class="preset-chip" data-preset="saas">SaaS Analytics Portal</button>
+          <button type="button" class="preset-chip" data-preset="go-app">Go + HTMX Booking App</button>
+        </div>
+      </div>
+
+      <form id="build-form" class="stack-md">
+        <label class="field-label">
+          <span><span data-i18n="mod.product_name">Nama Produk</span> <span class="muted-xs" data-i18n="mod.optional">(opsional — otomatis jika dikosongkan)</span></span>
+          <input id="f-product" type="text" placeholder="misal: aurora-client-portal" />
         </label>
-        <label>
-          Profile
-          <select id="f-profile">
-            <option value="static">static (HTML/CSS/JS)</option>
-            <option value="go-htmx">go-htmx</option>
-            <option value="node">node</option>
-            <option value="zig">zig</option>
+
+        <div class="field-label">
+          <span data-i18n="mod.arch_profile">Arsitektur Profile</span>
+          <input id="f-profile" type="hidden" value="static" />
+          <div class="profile-grid" id="profile-selector">
+            <button type="button" class="profile-option active" data-value="static">
+              <strong>static</strong>
+              <span>HTML / CSS / JS modern</span>
+            </button>
+            <button type="button" class="profile-option" data-value="go-htmx">
+              <strong>go-htmx</strong>
+              <span>Go backend + HTMX SSR</span>
+            </button>
+            <button type="button" class="profile-option" data-value="node">
+              <strong>node</strong>
+              <span>Node.js web service</span>
+            </button>
+            <button type="button" class="profile-option" data-value="zig">
+              <strong>zig</strong>
+              <span>Zig + HTMX high-perf</span>
+            </button>
+          </div>
+        </div>
+
+        <label class="field-label">
+          <span data-i18n="mod.harness">ACP Harness</span>
+          <select id="f-harness">
+            <option value="agy">agy</option>
+            <option value="opencode">opencode</option>
+            <option value="codex">codex</option>
+            <option value="pi">pi</option>
+            <option value="claude">claude</option>
           </select>
         </label>
-        <label>
-          Brief Produk
-          <textarea id="f-brief" required placeholder="Jelaskan fitur, tampilan, dan alur aplikasi yang ingin dibangun..."></textarea>
+
+        <label class="field-label">
+          <span data-i18n="mod.brief">Brief Produk</span>
+          <textarea id="f-brief" rows="5" required placeholder="Jelaskan tujuan bisnis, fitur utama, gaya visual, dan alur pengguna yang ingin dibangun..."></textarea>
         </label>
+
         <div class="modal-actions">
-          <button id="cancel-modal-btn" class="secondary" type="button">Batal</button>
-          <button class="primary" type="submit">Mulai Build</button>
+          <button id="cancel-modal-btn" class="secondary" type="button" data-i18n="mod.cancel">Batal</button>
+          <button id="submit-build-btn" class="primary" type="submit">
+            <span data-i18n="mod.start_build">Mulai Autonomous Build</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+          </button>
         </div>
       </form>
     </div>
   </div>
 
-  <script src="/static/app.js?v=3"></script>
+  <!-- Modal: Live Product Preview -->
+  <div id="preview-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="preview-title">
+    <div class="card modal preview-modal">
+      <div class="preview-toolbar">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <strong id="preview-title" style="font-size:0.95rem;">Live Preview</strong>
+          <span id="preview-mode-badge" class="profile-chip">static</span>
+        </div>
+
+        <div class="filter-pills" id="preview-viewports">
+          <button type="button" class="filter-pill active" data-vp="desktop">Desktop</button>
+          <button type="button" class="filter-pill" data-vp="tablet">Tablet (768px)</button>
+          <button type="button" class="filter-pill" data-vp="mobile">Mobile (390px)</button>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <button id="preview-reload-btn" class="secondary sm" type="button" data-i18n="mod.preview_reload">Muat Ulang</button>
+          <a id="preview-newtab-btn" class="secondary sm" href="#" target="_blank" rel="noopener noreferrer" style="text-decoration:none;display:inline-flex;align-items:center;padding:6px 11px;border-radius:var(--radius-sm);border:1px solid var(--border-strong);font-size:0.82rem;" data-i18n="mod.preview_newtab">Tab Baru</a>
+          <button id="preview-stop-btn" class="danger sm" type="button" data-i18n="mod.preview_stop">Hentikan Server</button>
+          <button id="preview-close-btn" class="icon-btn" type="button" aria-label="Tutup preview">✕</button>
+        </div>
+      </div>
+      <div class="preview-stage-wrap">
+        <div id="preview-stage" class="preview-stage vp-desktop">
+          <iframe id="preview-iframe" title="Product Live Preview"></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: DAG Task Inspector -->
+  <div id="task-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="task-modal-title">
+    <div class="card modal">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow" data-i18n="mod.task_eyebrow">DETAIL TASK DAG</div>
+          <h2 id="task-modal-title">-</h2>
+        </div>
+        <button id="task-modal-close" class="icon-btn" type="button" aria-label="Tutup">✕</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span id="task-modal-id" class="profile-chip">-</span>
+        <span id="task-modal-wave" class="profile-chip">Wave 1</span>
+        <span id="task-modal-state" class="badge">-</span>
+      </div>
+      <div id="task-modal-deps-wrap" hidden class="stack-xs">
+        <strong style="font-size:0.82rem;" data-i18n="mod.task_deps">Dependensi</strong>
+        <div id="task-modal-deps" class="dag-deps"></div>
+      </div>
+      <div id="task-modal-skills-wrap" hidden class="stack-xs">
+        <strong style="font-size:0.82rem;" data-i18n="mod.task_skills">Design Skills</strong>
+        <div id="task-modal-skills" class="dag-deps"></div>
+      </div>
+      <div class="stack-xs">
+        <strong style="font-size:0.82rem;" data-i18n="mod.task_instructions">Instruksi Worker</strong>
+        <div id="task-modal-instructions" class="event-detail" style="white-space:pre-wrap;max-height:220px;overflow-y:auto;"></div>
+      </div>
+      <div class="stack-xs">
+        <strong style="font-size:0.82rem;" data-i18n="mod.task_acceptance">Kriteria Penerimaan</strong>
+        <ol id="task-modal-acceptance" class="acceptance-list"></ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Edit Project -->
+  <div id="edit-project-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="edit-proj-title">
+    <div class="card modal">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow" data-i18n="mod.edit_eyebrow">EDIT PROYEK</div>
+          <h2 id="edit-proj-title" data-i18n="mod.edit_title">Perbarui Detail &amp; Brief Proyek</h2>
+        </div>
+        <button id="edit-project-close" class="icon-btn" type="button" aria-label="Tutup">✕</button>
+      </div>
+      <form id="edit-project-form" class="stack-md">
+        <label class="field-label">
+          <span data-i18n="mod.product_name">Nama Produk</span>
+          <input id="ep-name" type="text" required />
+        </label>
+        <label class="field-label">
+          <span data-i18n="mod.arch_profile">Arsitektur Profile</span>
+          <select id="ep-profile">
+            <option value="static">static</option>
+            <option value="go-htmx">go-htmx</option>
+            <option value="node">node</option>
+            <option value="zig">zig</option>
+          </select>
+        </label>
+        <label class="field-label">
+          <span data-i18n="mod.brief">Brief Produk</span>
+          <textarea id="ep-brief" rows="5" required></textarea>
+        </label>
+        <div class="modal-actions">
+          <button id="edit-project-cancel" class="secondary" type="button" data-i18n="mod.cancel">Batal</button>
+          <button id="ep-save-btn" class="primary" type="submit" data-i18n="mod.save">Simpan Perubahan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Delete Confirmation -->
+  <div id="delete-project-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="del-proj-title">
+    <div class="card modal" style="max-width:460px;">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow" style="color:var(--err);" data-i18n="mod.del_eyebrow">KONFIRMASI PENGHAPUSAN</div>
+          <h2 id="del-proj-title" data-i18n="mod.del_title">Hapus Proyek Secara Permanen?</h2>
+        </div>
+        <button id="delete-project-close" class="icon-btn" type="button" aria-label="Tutup">✕</button>
+      </div>
+      <div class="profile-chip" id="delete-project-name" style="justify-self:start;">-</div>
+      <p class="sub" style="margin:0;" data-i18n="mod.del_desc">
+        Seluruh riwayat job, task, event, repositori Git produk, dan artifak unduhan untuk proyek ini akan dihapus.
+      </p>
+      <div class="modal-actions">
+        <button id="delete-project-cancel" class="secondary" type="button" data-i18n="mod.cancel">Batal</button>
+        <button id="delete-project-confirm" class="danger" type="button" data-i18n="mod.del_confirm">Ya, Hapus Proyek</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: White-Label Branding -->
+  <div id="branding-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="brand-modal-title">
+    <div class="card modal">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow" data-i18n="mod.brand_eyebrow">WHITE-LABEL STUDIO</div>
+          <h2 id="brand-modal-title" data-i18n="mod.brand_title">Pengaturan Branding &amp; Tampilan Klien</h2>
+        </div>
+        <button id="branding-close" class="icon-btn" type="button" aria-label="Tutup">✕</button>
+      </div>
+      <form id="branding-form" class="stack-md">
+        <label class="field-label">
+          <span data-i18n="mod.brand_name">Nama Brand / Studio</span>
+          <input id="br-name" type="text" required maxlength="60" placeholder="acp-factory" />
+        </label>
+        <label class="field-label">
+          <span data-i18n="mod.brand_sub">Subjudul Studio</span>
+          <input id="br-sub" type="text" maxlength="60" placeholder="AUTONOMOUS STUDIO" />
+        </label>
+        <label class="field-label">
+          <span data-i18n="mod.client_label">Label Klien (Opsional, tampil di topbar)</span>
+          <input id="br-client" type="text" maxlength="80" placeholder="misal: Prepared for PT Maju Jaya" />
+        </label>
+        <div class="field-label">
+          <span data-i18n="mod.accent_color">Warna Aksen Utama</span>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <div id="br-swatches" class="swatch-row">
+              <button type="button" class="color-swatch" data-color="#3b82f6" style="background:#3b82f6" title="Cobalt Blue"></button>
+              <button type="button" class="color-swatch" data-color="#6366f1" style="background:#6366f1" title="Indigo"></button>
+              <button type="button" class="color-swatch" data-color="#10b981" style="background:#10b981" title="Emerald"></button>
+              <button type="button" class="color-swatch" data-color="#8b5cf6" style="background:#8b5cf6" title="Violet"></button>
+              <button type="button" class="color-swatch" data-color="#f59e0b" style="background:#f59e0b" title="Amber"></button>
+              <button type="button" class="color-swatch" data-color="#0ea5e9" style="background:#0ea5e9" title="Sky"></button>
+            </div>
+            <input id="br-color" type="color" value="#3b82f6" style="width:42px;height:32px;padding:2px;" />
+          </div>
+        </div>
+        <label class="field-label">
+          <span data-i18n="mod.default_lang">Bahasa Default</span>
+          <select id="br-lang">
+            <option value="id">Bahasa Indonesia (ID)</option>
+            <option value="en">English (EN)</option>
+          </select>
+        </label>
+        <div class="modal-actions">
+          <button id="branding-cancel" class="secondary" type="button" data-i18n="mod.cancel">Batal</button>
+          <button id="br-save-btn" class="primary" type="submit" data-i18n="mod.brand_save">Simpan Branding</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <script src="/static/i18n.js?v=5"></script>
+  <script src="/static/app.js?v=5"></script>
 </body>
 </html>

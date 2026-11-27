@@ -192,3 +192,35 @@ async def test_acp_client_stopped_state():
     client = AcpClient(["echo", "hello"])
     with pytest.raises(AcpProcessError):
         await client.send_request("test")
+
+
+@pytest.mark.asyncio
+async def test_acp_client_handles_server_permission_request():
+    """Test that server-to-client requests (id + method) like session/request_permission are handled."""
+    client = AcpClient(["echo", "hello"])
+    sent: list[dict] = []
+
+    async def fake_write(msg: dict) -> None:
+        sent.append(msg)
+
+    client._write_message = fake_write  # type: ignore[method-assign]
+
+    await client._handle_incoming_request(
+        77,
+        "session/request_permission",
+        {
+            "options": [
+                {"optionId": "reject", "kind": "reject_once"},
+                {"optionId": "allow_all", "kind": "allow_always"},
+            ]
+        },
+    )
+    assert sent[-1] == {
+        "jsonrpc": "2.0",
+        "id": 77,
+        "result": {"outcome": {"outcome": "selected", "optionId": "allow_all"}},
+    }
+
+    await client._handle_incoming_request(78, "unknown/method", {})
+    assert sent[-1]["id"] == 78
+    assert sent[-1]["error"]["code"] == -32601

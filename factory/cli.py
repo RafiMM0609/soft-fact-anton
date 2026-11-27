@@ -62,15 +62,15 @@ def doctor_command(settings: Settings) -> int:
         print("[FAIL] Git binary not found in PATH")
         all_ok = False
 
-    # 4. Harness CLI check (e.g. agy)
-    agy_path = Path(settings.agy)
-    if agy_path.is_file() and os.access(agy_path, os.X_OK):
-        print(f"[OK] Harness binary ({settings.harness}): {agy_path}")
-    elif shutil.which(settings.harness):
-        which_path = shutil.which(settings.harness)
-        print(f"[OK] Harness binary ({settings.harness}): {which_path}")
+    # 4. Harness CLI check (auto-detected across PATH, ~/.local/bin, or FACTORY_<NAME>)
+    resolved_harness = settings.resolve_harness_path()
+    if resolved_harness and Path(resolved_harness).is_file() and os.access(resolved_harness, os.X_OK):
+        print(f"[OK] Harness binary ({settings.harness}): {resolved_harness}")
     else:
-        print(f"[WARN] Harness binary not found at: {agy_path} (can be overridden via FACTORY_AGY)")
+        env_key = f"FACTORY_{settings.harness.strip().upper()}"
+        print(
+            f"[WARN] Harness binary ({settings.harness}) not found in PATH, ~/.local/bin, or {env_key}"
+        )
 
     # 5. Host Memory and OS resource check
     try:

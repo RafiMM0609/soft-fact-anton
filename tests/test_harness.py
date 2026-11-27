@@ -9,7 +9,7 @@ import sys
 import pytest
 from pydantic import BaseModel, Field
 
-from acp.agent import AcpAgent, clean_markdown_fences, parse_schema_output
+from acp.agent import AcpAgent, clean_markdown_fences, extract_usage, parse_schema_output
 from acp.harness import acp_command, isolated_env, print_command, resolve_harness
 from acp.protocol import AcpProcessError
 from acp.worker import AcpWorker, AcpWorkerError
@@ -77,6 +77,66 @@ def test_resolve_harness_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
         resolve_harness("nonexistent_agent_xyz")
 
 
+def test_resolve_harness_auto_detects_user_local_bin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("FACTORY_AGY", raising=False)
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    bin_dir = tmp_path / ".local" / "bin"
+    bin_dir.mkdir(parents=True)
+    fake_agy = bin_dir / "agy"
+    fake_agy.write_text("#!/bin/sh\necho local agy\n")
+    fake_agy.chmod(0o755)
+
+    assert resolve_harness("agy") == str(fake_agy.resolve())
+
+
+def test_resolve_harness_other_agent_user_local_bin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("FACTORY_CODEX", raising=False)
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    bin_dir = tmp_path / ".local" / "bin"
+    bin_dir.mkdir(parents=True)
+    fake_codex = bin_dir / "codex"
+    fake_codex.write_text("#!/bin/sh\necho local codex\n")
+    fake_codex.chmod(0o755)
+
+    assert resolve_harness("codex") == str(fake_codex.resolve())
+
+
+def test_resolve_harness_opencode_local_bin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("FACTORY_OPENCODE", raising=False)
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    oc_bin = tmp_path / ".opencode" / "bin"
+    oc_bin.mkdir(parents=True)
+    fake_oc = oc_bin / "opencode"
+    fake_oc.write_text("#!/bin/sh\necho opencode\n")
+    fake_oc.chmod(0o755)
+    assert resolve_harness("opencode") == str(fake_oc.resolve())
+
+    local_bin = tmp_path / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    fake_local_oc = local_bin / "opencode"
+    fake_local_oc.write_text("#!/bin/sh\necho opencode local\n")
+    fake_local_oc.chmod(0o755)
+    assert resolve_harness("opencode") == str(fake_local_oc.resolve())
+
+    custom_oc = tmp_path / "custom_opencode"
+    custom_oc.write_text("#!/bin/sh\necho custom opencode\n")
+    custom_oc.chmod(0o755)
+    monkeypatch.setenv("FACTORY_OPENCODE", str(custom_oc))
+    assert resolve_harness("opencode") == str(custom_oc.resolve())
+
+
 def test_acp_command_agy(tmp_path: Path) -> None:
     cmd = acp_command(worktree=tmp_path, agent_name="agy")
     assert cmd[0].endswith("agy")
@@ -89,6 +149,12 @@ def test_acp_command_agy(tmp_path: Path) -> None:
 def test_acp_command_other_agent(tmp_path: Path) -> None:
     cmd = acp_command(worktree=tmp_path, agent_name="pi", harness_path="/usr/bin/pi")
     assert cmd == ["/usr/bin/pi", "acp", "--add-dir", str(tmp_path.resolve())]
+
+
+def test_acp_command_opencode(tmp_path: Path) -> None:
+    cmd = acp_command(worktree=tmp_path, agent_name="opencode", harness_path="/usr/bin/opencode")
+    assert cmd == ["/usr/bin/opencode", "acp", "--pure", "--cwd", str(tmp_path.resolve())]
+    assert "--add-dir" not in cmd
 
 
 def test_print_command_agy(tmp_path: Path) -> None:
@@ -124,6 +190,72 @@ def test_print_command_pi() -> None:
         model="gemini-flash",
     )
     assert cmd == ["/usr/bin/pi", "--print", "--mode", "json", "--model", "gemini-flash"]
+
+
+def test_print_command_opencode() -> None:
+    cmd = print_command(
+        instruction="Plan architecture",
+        agent_name="opencode",
+        harness_path="/usr/bin/opencode",
+        model="anthropic/claude-sonnet-4",
+    )
+    assert cmd == [
+        "/usr/bin/opencode",
+        "run",
+        "--format",
+        "json",
+        "--pure",
+        "--model",
+        "anthropic/claude-sonnet-4",
+        "Plan architecture",
+    ]
+
+
+def test_opencode_ndjson_parse_and_usage() -> None:
+    ndjson_stream = "\n".join(
+        [
+            json.dumps({"type": "step_start", "sessionID": "ses_1"}),
+            json.dumps(
+                {
+                    "type": "text",
+                    "part": {"type": "text", "text": '```json\n{"approved": true, '},
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "text",
+                    "part": {"type": "text", "text": '"verdict": "Looks solid", "comments": []}\n```'},
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "step_finish",
+                    "part": {
+                        "reason": "stop",
+                        "tokens": {
+                            "input": 120,
+                            "output": 45,
+                            "reasoning": 15,
+                            "cache": {"read": 30, "write": 0},
+                            "total": 210,
+                        },
+                    },
+                }
+            ),
+        ]
+    )
+    parsed = parse_schema_output(ndjson_stream, ReviewSchema)
+    assert parsed.approved is True
+    assert parsed.verdict == "Looks solid"
+
+    usage = extract_usage(ndjson_stream)
+    assert usage == {
+        "input_tokens": 120,
+        "output_tokens": 45,
+        "thinking_tokens": 15,
+        "cache_read_tokens": 30,
+        "total_tokens": 210,
+    }
 
 
 # ---------------------------------------------------------------------------

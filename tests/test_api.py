@@ -59,16 +59,18 @@ def test_api_build_and_job_lifecycle(test_app_and_client):
     with patch("factory.engine.Engine.build") as mock_build:
         mock_build.return_value = {"status": "succeeded", "digest": "sha256:dummy"}
 
-        # 1. Trigger build
+        # 1. Trigger build (with explicit opencode harness override)
         payload = {
             "brief": "Build a coffee shop website",
             "product": "coffee-shop-api",
             "profile": "static",
+            "harness": "opencode",
         }
         resp = client.post("/api/build", json=payload, headers=headers)
         assert resp.status_code == 202
         body = resp.json()
         assert body["status"] == "queued"
+        assert body["harness"] == "opencode"
         job_id = body["job_id"]
         assert body["project_id"] == "coffee-shop-api"
 
@@ -159,17 +161,179 @@ def test_api_dashboard_and_list_endpoints(test_app_and_client):
     resp_js = client.get("/static/app.js")
     assert resp_js.status_code == 200
 
+    resp_i18n = client.get("/static/i18n.js")
+    assert resp_i18n.status_code == 200
+
     # List projects and jobs
     proj = store.create_project({"name": "dash-proj", "brief": "brief", "profile": "static"})
     store.enqueue(proj["id"], kind="build", payload={"brief": "brief"})
 
     resp_projs = client.get("/api/projects", headers=headers)
     assert resp_projs.status_code == 200
-    assert any(p["id"] == proj["id"] for p in resp_projs.json())
+    projs_list = resp_projs.json()
+    assert any(p["id"] == proj["id"] and "brief" in p for p in projs_list)
 
     resp_jobs = client.get("/api/jobs", headers=headers)
     assert resp_jobs.status_code == 200
     assert any(j["project_id"] == proj["id"] for j in resp_jobs.json())
+
+
+def test_api_ui_settings_get_and_update(test_app_and_client):
+    _, client, _, token = test_app_and_client
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Public GET works without auth
+    resp_default = client.get("/api/settings/ui")
+    assert resp_default.status_code == 200
+    assert resp_default.json()["brand_name"] == "acp-factory"
+
+    # PUT requires auth
+    resp_unauth = client.put("/api/settings/ui", json={"brand_name": "Acme Studio"})
+    assert resp_unauth.status_code == 401
+
+    # Valid PUT updates and persists
+    payload = {
+        "brand_name": "Acme Digital Studio",
+        "brand_subtitle": "CLIENT DELIVERY",
+        "client_label": "Prepared for PT Nusantara",
+        "accent_color": "#10b981",
+        "default_lang": "en",
+    }
+    resp_put = client.put("/api/settings/ui", json=payload, headers=headers)
+    assert resp_put.status_code == 200
+    assert resp_put.json() == payload
+
+    resp_after = client.get("/api/settings/ui")
+    assert resp_after.status_code == 200
+    assert resp_after.json()["brand_name"] == "Acme Digital Studio"
+    assert resp_after.json()["accent_color"] == "#10b981"
+
+
+def test_api_project_update_and_delete(test_app_and_client):
+    settings, client, store, token = test_app_and_client
+    headers = {"Authorization": f"Bearer {token}"}
+
+    proj = store.create_project({"name": "orig-name", "brief": "orig brief", "profile": "static"})
+    pid = proj["id"]
+    prod_dir = settings.products_dir / pid
+    prod_dir.mkdir(parents=True, exist_ok=True)
+    (prod_dir / "index.html").write_text("<h1>Hello</h1>", encoding="utf-8")
+
+    # PATCH updates metadata
+    resp_patch = client.patch(
+        f"/api/projects/{pid}",
+        headers=headers,
+        json={"name": "New Client Name", "brief": "Updated brief", "profile": "go-htmx"},
+    )
+    assert resp_patch.status_code == 200
+    assert resp_patch.json()["name"] == "New Client Name"
+    assert resp_patch.json()["profile"] == "go-htmx"
+
+    # Active queued job blocks DELETE with 409
+    job = store.enqueue(pid, kind="build", payload={"brief": "Updated brief"})
+    resp_del_conflict = client.delete(f"/api/projects/{pid}", headers=headers)
+    assert resp_del_conflict.status_code == 409
+
+    # Cancel job, then DELETE succeeds and cleans up disk & DB
+    store.cancel(job["id"])
+    resp_del = client.delete(f"/api/projects/{pid}", headers=headers)
+    assert resp_del.status_code == 200
+    assert resp_del.json()["deleted"] is True
+    assert not prod_dir.exists()
+    assert client.get(f"/api/projects/{pid}", headers=headers).status_code == 404
+
+
+def test_api_project_files_and_file_content(test_app_and_client):
+    settings, client, store, token = test_app_and_client
+    headers = {"Authorization": f"Bearer {token}"}
+
+    proj = store.create_project({"name": "files-proj", "brief": "brief", "profile": "static"})
+    pid = proj["id"]
+    prod_dir = settings.products_dir / pid
+    (prod_dir / "src").mkdir(parents=True, exist_ok=True)
+    (prod_dir / ".git").mkdir(parents=True, exist_ok=True)
+    (prod_dir / "index.html").write_text("<!doctype html><h1>Hi</h1>", encoding="utf-8")
+    (prod_dir / "src" / "app.js").write_text("console.log('ok');", encoding="utf-8")
+    (prod_dir / ".git" / "HEAD").write_text("ref: refs/heads/main", encoding="utf-8")
+    (prod_dir / ".env").write_text("SECRET=123", encoding="utf-8")
+
+    resp_list = client.get(f"/api/projects/{pid}/files", headers=headers)
+    assert resp_list.status_code == 200
+    listed_paths = [f["path"] for f in resp_list.json()["files"]]
+    assert "index.html" in listed_paths
+    assert "src/app.js" in listed_paths
+    assert ".git/HEAD" not in listed_paths
+    assert ".env" not in listed_paths
+
+    resp_read = client.get(f"/api/projects/{pid}/file?path=src/app.js", headers=headers)
+    assert resp_read.status_code == 200
+    assert resp_read.json()["content"] == "console.log('ok');"
+
+    # Security checks on traversal and hidden git/env files
+    assert client.get(f"/api/projects/{pid}/file?path=../secret", headers=headers).status_code == 403
+    assert client.get(f"/api/projects/{pid}/file?path=.git/HEAD", headers=headers).status_code == 403
+    assert client.get(f"/api/projects/{pid}/file?path=.env", headers=headers).status_code == 403
+
+
+def test_api_live_preview_static(test_app_and_client):
+    settings, client, store, token = test_app_and_client
+    headers = {"Authorization": f"Bearer {token}"}
+
+    proj = store.create_project({"name": "preview-proj", "brief": "brief", "profile": "static"})
+    pid = proj["id"]
+    prod_dir = settings.products_dir / pid
+    (prod_dir / ".git").mkdir(parents=True, exist_ok=True)
+    (prod_dir / "index.html").write_text("<h1>Live Preview Works</h1>", encoding="utf-8")
+    (prod_dir / "app.css").write_text("body { color: #111; }", encoding="utf-8")
+    (prod_dir / ".git" / "HEAD").write_text("ref: refs/heads/main", encoding="utf-8")
+
+    resp_start = client.post(f"/api/projects/{pid}/preview/start", headers=headers)
+    assert resp_start.status_code == 200
+    data = resp_start.json()
+    assert data["mode"] == "static"
+    preview_url = data["preview_url"]
+
+    # Unauthorized without pt token or cookie
+    resp_no_tok = client.get(f"/preview/{pid}/")
+    assert resp_no_tok.status_code == 401
+
+    # Valid pt token serves HTML and sets factory_preview_token cookie
+    resp_ok = client.get(preview_url)
+    assert resp_ok.status_code == 200
+    assert "Live Preview Works" in resp_ok.text
+    assert "factory_preview_token" in resp_ok.cookies
+
+    # Subsequent asset request works using the cookie alone
+    resp_css = client.get(f"/preview/{pid}/app.css")
+    assert resp_css.status_code == 200
+    assert "color: #111" in resp_css.text
+
+    # Sensitive files remain blocked
+    resp_git = client.get(f"/preview/{pid}/.git/HEAD")
+    assert resp_git.status_code == 403
+
+    # Stop preview clears session
+    resp_stop = client.post(f"/api/projects/{pid}/preview/stop", headers=headers)
+    assert resp_stop.status_code == 200
+    assert resp_stop.json()["stopped"] is True
+    assert client.get(preview_url).status_code == 404
+
+
+def test_api_events_stream_once(test_app_and_client):
+    _, client, store, token = test_app_and_client
+    headers = {"Authorization": f"Bearer {token}"}
+
+    with store.tx() as db:
+        store.event_tx(db, "sse-proj", "sse-job", "verify.passed", {"ok": True})
+
+    resp = client.get(
+        "/api/events/stream?project_id=sse-proj&after_seq=0&once=true",
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/event-stream")
+    assert "event: factory_event" in resp.text
+    assert "verify.passed" in resp.text
 
 
 def test_api_adjust_preview_and_trigger(test_app_and_client):

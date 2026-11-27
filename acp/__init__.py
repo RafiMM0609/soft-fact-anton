@@ -4,6 +4,7 @@ from acp.agent import AcpAgent
 from acp.client import AcpClient
 from acp.harness import (
     acp_command,
+    detect_available_harnesses,
     isolated_env,
     print_command,
     resolve_harness,
@@ -45,6 +46,7 @@ __all__ = [
     "SessionNewParams",
     "SessionPromptParams",
     "acp_command",
+    "detect_available_harnesses",
     "isolated_env",
     "print_command",
     "resolve_harness",

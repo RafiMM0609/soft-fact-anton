@@ -7,6 +7,18 @@ import os
 from pathlib import Path
 import secrets
 
+from acp.harness import resolve_harness
+
+
+def _default_agy() -> str:
+    env_val = os.getenv("FACTORY_AGY")
+    if env_val:
+        return env_val
+    try:
+        return resolve_harness("agy")
+    except FileNotFoundError:
+        return str(Path.home() / ".local" / "bin" / "agy")
+
 
 def _default_token(data_dir: Path) -> str:
     env_token = os.getenv("FACTORY_OPERATOR_TOKEN")
@@ -34,9 +46,7 @@ class Settings:
     data: Path = field(
         default_factory=lambda: Path(os.getenv("FACTORY_DATA", "./data")).resolve()
     )
-    agy: str = field(
-        default_factory=lambda: os.getenv("FACTORY_AGY", "/home/ubuntu/.local/bin/agy")
-    )
+    agy: str = field(default_factory=_default_agy)
     harness: str = field(
         default_factory=lambda: os.getenv("FACTORY_HARNESS", "agy")
     )
@@ -85,3 +95,23 @@ class Settings:
     @property
     def starters_dir(self) -> Path:
         return (Path(__file__).parent / "starters").resolve()
+
+    def resolve_harness_path(self) -> str | None:
+        """Resolve the active harness executable path, auto-detecting across PATH and ~/.local/bin."""
+        normalized = self.harness.strip().lower()
+        if normalized == "agy":
+            if os.getenv("FACTORY_AGY"):
+                return self.agy
+            if self.agy:
+                cand = Path(self.agy).expanduser()
+                if cand.is_file() and os.access(cand, os.X_OK):
+                    return str(cand.resolve())
+            try:
+                return resolve_harness("agy")
+            except FileNotFoundError:
+                return None
+
+        try:
+            return resolve_harness(normalized)
+        except FileNotFoundError:
+            return None

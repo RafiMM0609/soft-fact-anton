@@ -71,16 +71,25 @@ PROVIDER_ENV_VARS = (
 )
 
 
+def _first_executable(candidates: list[Path]) -> str | None:
+    for candidate in candidates:
+        try:
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate.resolve())
+        except OSError:
+            continue
+    return None
+
+
 def resolve_harness(agent_name: str = "agy") -> str:
     """Find and validate a local harness executable for the specified agent.
 
     Resolution order for 'agy':
       1. os.environ.get("FACTORY_AGY")
-      2. /home/ubuntu/.local/bin/agy
-      3. shutil.which("agy")
-      4. shutil.which("antigravity")
+      2. shutil.which("agy") / shutil.which("antigravity")
+      3. ~/.local/bin/{agy,antigravity}, /usr/local/bin/agy, /usr/bin/agy, /opt/homebrew/bin/agy
 
-    Supports 'codex', 'pi', 'claude' via FACTORY_<NAME> and shutil.which.
+    Supports 'opencode', 'codex', 'pi', 'claude' via FACTORY_<NAME>, PATH, and ~/.local/bin.
 
     Raises:
         FileNotFoundError: If the binary cannot be found or is not executable.
@@ -95,10 +104,6 @@ def resolve_harness(agent_name: str = "agy") -> str:
                 return str(candidate)
             raise FileNotFoundError(f"Configured FACTORY_AGY binary not executable or not found: {env_val}")
 
-        default_local = Path("/home/ubuntu/.local/bin/agy")
-        if default_local.is_file() and os.access(default_local, os.X_OK):
-            return str(default_local)
-
         which_agy = shutil.which("agy")
         if which_agy:
             return which_agy
@@ -107,8 +112,52 @@ def resolve_harness(agent_name: str = "agy") -> str:
         if which_anti:
             return which_anti
 
+        home = Path.home()
+        found = _first_executable(
+            [
+                home / ".local" / "bin" / "agy",
+                home / ".local" / "bin" / "antigravity",
+                Path("/usr/local/bin/agy"),
+                Path("/usr/bin/agy"),
+                Path("/opt/homebrew/bin/agy"),
+                Path("/home/ubuntu/.local/bin/agy"),
+            ]
+        )
+        if found:
+            return found
+
         raise FileNotFoundError(
-            "Harness executable 'agy' not found in FACTORY_AGY, /home/ubuntu/.local/bin/agy, or PATH"
+            "Harness executable 'agy' not found in FACTORY_AGY, PATH, or ~/.local/bin"
+        )
+
+    if normalized == "opencode":
+        env_val = os.environ.get("FACTORY_OPENCODE")
+        if env_val:
+            candidate = Path(env_val).expanduser().resolve()
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate)
+            raise FileNotFoundError(
+                f"Configured FACTORY_OPENCODE binary not executable or not found: {env_val}"
+            )
+
+        which_oc = shutil.which("opencode")
+        if which_oc:
+            return which_oc
+
+        home = Path.home()
+        found = _first_executable(
+            [
+                home / ".local" / "bin" / "opencode",
+                home / ".opencode" / "bin" / "opencode",
+                Path("/usr/local/bin/opencode"),
+                Path("/opt/homebrew/bin/opencode"),
+            ]
+        )
+        if found:
+            return found
+
+        raise FileNotFoundError(
+            "Harness executable 'opencode' not found in FACTORY_OPENCODE, PATH, or ~/.local/bin"
         )
 
     # Generic or other known agents (codex, pi, claude)
@@ -124,7 +173,33 @@ def resolve_harness(agent_name: str = "agy") -> str:
     if which_agent:
         return which_agent
 
-    raise FileNotFoundError(f"Harness executable '{normalized}' not found in {env_key} or PATH")
+    home = Path.home()
+    found = _first_executable(
+        [
+            home / ".local" / "bin" / normalized,
+            Path("/usr/local/bin") / normalized,
+            Path("/opt/homebrew/bin") / normalized,
+        ]
+    )
+    if found:
+        return found
+
+    raise FileNotFoundError(
+        f"Harness executable '{normalized}' not found in {env_key}, PATH, or ~/.local/bin"
+    )
+
+
+def detect_available_harnesses(
+    agents: tuple[str, ...] = ("agy", "opencode", "codex", "pi", "claude"),
+) -> dict[str, str]:
+    """Detect all locally available harness executables."""
+    detected: dict[str, str] = {}
+    for name in agents:
+        try:
+            detected[name] = resolve_harness(name)
+        except FileNotFoundError:
+            continue
+    return detected
 
 
 def get_harness_path(agent_name: str = "agy") -> str:
@@ -156,6 +231,10 @@ def acp_command(
         cmd = [executable, "acp", "--dangerously-skip-permissions"]
         if worktree is not None:
             cmd.extend(["--add-dir", str(Path(worktree).resolve())])
+    elif normalized == "opencode":
+        cmd = [executable, "acp", "--pure"]
+        if worktree is not None:
+            cmd.extend(["--cwd", str(Path(worktree).resolve())])
     else:
         cmd = [executable, "acp"]
         if worktree is not None:
@@ -206,6 +285,11 @@ def print_command(
             cmd.extend(["--json-schema", schema_str])
         if model:
             cmd.extend(["--model", model])
+    elif normalized == "opencode":
+        cmd = [executable, "run", "--format", "json", "--pure"]
+        if model:
+            cmd.extend(["--model", model])
+        cmd.append(instruction)
     elif normalized == "pi":
         cmd = [executable, "--print", "--mode", "json"]
         if model:
@@ -319,6 +403,30 @@ def isolated_env(
                         shutil.copy2(pjson, target_projects / pjson.name)
                     except OSError:
                         pass
+
+        # Preserve opencode configuration and credentials without leaking session db/history
+        real_oc_cfg = real_home / ".config" / "opencode" / "opencode.json"
+        if real_oc_cfg.is_file():
+            target_oc_cfg_dir = home_path / ".config" / "opencode"
+            target_oc_cfg_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            try:
+                shutil.copy2(real_oc_cfg, target_oc_cfg_dir / "opencode.json")
+            except OSError:
+                pass
+
+        target_oc_share = home_path / ".local" / "share" / "opencode"
+        oc_auth_sources = (
+            real_home / ".local" / "share" / "opencode" / "auth.json",
+            real_home / ".opencode-local" / "data" / "opencode" / "auth.json",
+        )
+        for oc_auth in oc_auth_sources:
+            if oc_auth.is_file():
+                target_oc_share.mkdir(parents=True, exist_ok=True, mode=0o700)
+                try:
+                    shutil.copy2(oc_auth, target_oc_share / "auth.json")
+                except OSError:
+                    pass
+                break
 
         env["HOME"] = str(home_path)
         env["XDG_CONFIG_HOME"] = str(home_path / ".config")
