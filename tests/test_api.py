@@ -104,6 +104,35 @@ def test_api_build_and_job_lifecycle(test_app_and_client):
         assert len(proj_data["recent_jobs"]) >= 1
 
 
+def test_api_retry_failed_build_with_new_harness(test_app_and_client):
+    _, client, store, token = test_app_and_client
+    headers = {"Authorization": f"Bearer {token}"}
+    project_id = store.create_project({"name": "Retry", "brief": "Build a site"})["id"]
+    source = store.enqueue(project_id, "build", {
+        "harness": "agy", "mode": "adjust", "instruction": "Fix mobile layout",
+    })
+    store.event(project_id, source["id"], "build.tasks_started", {})
+    store.finish(source["id"], "failed", error="Worker timeout")
+    url = f"/api/jobs/{source['id']}"
+    assert client.get(url, headers=headers).json()["can_retry"]
+
+    with patch("factory.engine.Engine.build", autospec=True) as mock_build:
+        res = client.post(f"{url}/retry", json={
+            "harness": "opencode", "model_id": "opencode/big-pickle",
+        }, headers=headers)
+        assert res.status_code == 202
+        assert mock_build.call_args.args[0].worker.model == "opencode/big-pickle"
+
+    retried = client.get(f"/api/jobs/{res.json()['job_id']}", headers=headers).json()
+    assert retried["payload"] == {
+        "harness": "opencode", "model_id": "opencode/big-pickle", "mode": "adjust",
+        "instruction": "Fix mobile layout", "plan_ready": True, "retry_of": source["id"],
+    }
+    original = client.get(url, headers=headers).json()
+    assert original["error"] == "Worker timeout" and not original["can_retry"]
+    assert client.post(f"{url}/retry", json={"harness": "agy"}, headers=headers).status_code == 409
+
+
 def test_api_cancel_job(test_app_and_client):
     _, client, store, token = test_app_and_client
     headers = {"Authorization": f"Bearer {token}"}

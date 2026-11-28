@@ -182,11 +182,17 @@ class ParallelBuilder:
                 except Exception as exc:
                     logger.debug("Failed querying tasks_merged_for_project: %s", exc)
 
+            current_job_completed: set[str] = set()
             if self.store and hasattr(self.store, "completed_tasks"):
                 try:
-                    completed.update(self.store.completed_tasks(job_id))
+                    current_job_completed = self.store.completed_tasks(job_id)
+                    completed.update(current_job_completed)
                 except Exception:
                     pass
+            completed.intersection_update(task.id for task in plan.tasks)
+            if self.store:
+                for task_id in sorted(completed - current_job_completed):
+                    self.store.set_task_state(job_id, task_id, "merged", {"reused": True})
 
             attempts: dict[str, int] = defaultdict(int)
             repair_feedbacks: dict[str, str] = {}

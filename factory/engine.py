@@ -332,8 +332,15 @@ class Engine:
                 except Exception:
                     pass
 
+            brief = project.get("brief", "") if isinstance(project, dict) else getattr(project, "brief", "")
+            if job_payload.get("retry_of"):
+                brief = job_payload.get("brief", brief)
             active_plan = plan
-            if active_plan is None and job_payload.get("mode") == "adjust":
+            if (
+                active_plan is None
+                and job_payload.get("mode") == "adjust"
+                and not job_payload.get("plan_ready")
+            ):
                 active_plan = self.plan_adjust(
                     project=project,
                     instruction=str(job_payload.get("instruction", "")),
@@ -355,17 +362,16 @@ class Engine:
                         active_plan = None
 
             if active_plan is None:
-                brief = (
-                    project.get("brief", "")
-                    if isinstance(project, dict)
-                    else getattr(project, "brief", "")
-                )
                 active_plan = self.plan_brief(project, brief, cancelled=cancelled)
 
             with self.store.tx() as db:
                 db.execute(
                     "UPDATE projects SET plan=? WHERE id=?",
                     (active_plan.model_dump_json(), project_id),
+                )
+                db.execute(
+                    "UPDATE jobs SET payload=? WHERE id=?",
+                    (json.dumps({**job_payload, "plan_ready": True}), job_id),
                 )
 
             stage = "build"

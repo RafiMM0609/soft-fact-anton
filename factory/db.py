@@ -225,6 +225,7 @@ class Store:
         payload: dict[str, Any] | None = None,
         allowed: list[str] | set[str] | None = None,
         next_state: str | None = None,
+        retry_of: str | None = None,
     ) -> dict[str, Any]:
         job_id = uid()
         payload = payload or {}
@@ -235,6 +236,14 @@ class Store:
                     raise KeyError("Project not found")
                 if allowed and row["state"] not in allowed:
                     raise Conflict(f"Project is {row['state']}")
+                if retry_of is not None:
+                    latest = db.execute(
+                        "SELECT id, state FROM jobs WHERE project_id=? AND kind='build' "
+                        "ORDER BY created DESC, rowid DESC LIMIT 1",
+                        (project_id,),
+                    ).fetchone()
+                    if latest is None or latest["id"] != retry_of or latest["state"] != "failed":
+                        raise Conflict("Only the latest failed build can be resumed")
 
                 db.execute(
                     "INSERT INTO jobs(id, project_id, kind, payload, created) VALUES(?,?,?,?,?)",

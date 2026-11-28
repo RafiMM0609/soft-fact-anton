@@ -435,6 +435,46 @@ def test_max_repairs_exceeded(test_setup: dict[str, Any], worker_fails: bool):
     assert len(list_worktrees(root)) == 1
 
 
+def test_resume_runs_only_unmerged_tasks(test_setup: dict[str, Any]):
+    store, project, original = (test_setup[key] for key in ("store", "project", "job"))
+    settings = test_setup["settings"]
+    settings.max_repairs = 1
+    plan = Plan(summary="Resume test", tasks=[
+        make_task("setup"), make_task("feature", depends_on=["setup"]),
+    ])
+
+    def run_original(cmd, *, cwd, **kwargs):
+        if (cwd / "setup.txt").exists():
+            raise AcpWorkerError("Original ACP failed")
+        (cwd / "setup.txt").write_text("merged", encoding="utf-8")
+        return "done"
+
+    def run_retry(cmd, *, cwd, **kwargs):
+        assert cmd[0] == "opencode-test"
+        assert (cwd / "setup.txt").read_text(encoding="utf-8") == "merged"
+        (cwd / "feature.txt").write_text("done", encoding="utf-8")
+        return "done"
+
+    def run(job, worker):
+        builder = ParallelBuilder(settings=settings, store=store, worker=worker)
+        return builder.build_tasks(
+            project=project, job=job, plan=plan, instructions_for="Do work",
+            review_for=lambda *_: Review(decision="approved", findings=[]),
+        )
+
+    original_worker = AcpWorker(runner=run_original, harness_path="/usr/bin/agy")
+    with pytest.raises(ParallelBuildError, match="Original ACP failed"):
+        run(original, original_worker)
+    store.finish(original["id"], "failed")
+
+    retry = store.enqueue(project["id"], "build", retry_of=original["id"])
+    retry_worker = AcpWorker(agent_name="opencode", harness_path="opencode-test", runner=run_retry)
+    assert run(retry, retry_worker) == ["feature", "setup"]
+    assert [worker["task_id"] for worker in store.workers_for(retry["id"])] == ["feature"]
+    assert json.loads(store.task(retry["id"], "setup")["detail"]) == {"reused": True}
+    assert store.task(original["id"], "feature")["state"] == "failed"
+
+
 def test_cancellation_aborts_immediately(test_setup: dict[str, Any]):
     store = test_setup["store"]
     project = test_setup["project"]

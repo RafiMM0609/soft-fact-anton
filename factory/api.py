@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 
 from acp.harness import detect_available_harnesses
 from factory.config import Settings
-from factory.db import Store
+from factory.db import Conflict, Store
 from factory.engine import Engine
 from factory.products import product_root
 from factory.testing import _find_free_port, _wait_for_port
@@ -77,16 +77,19 @@ HOP_BY_HOP_HEADERS = frozenset(
 )
 
 
-class BuildRequest(BaseModel):
-    brief: str = Field(..., description="Product specification brief")
-    product: str | None = Field(None, description="Product identifier / name")
-    profile: str = Field("static", description="Product profile type (static, go-htmx, etc.)")
+class BuildHarnessRequest(BaseModel):
     harness: str | None = Field(
         default=None,
         pattern=r"^(agy|opencode|codex|pi|claude)$",
         description="Optional ACP harness override for this build",
     )
     model_id: str | None = None
+
+
+class BuildRequest(BuildHarnessRequest):
+    brief: str = Field(..., description="Product specification brief")
+    product: str | None = Field(None, description="Product identifier / name")
+    profile: str = Field("static", description="Product profile type (static, go-htmx, etc.)")
 
 
 class AdjustPreviewRequest(BaseModel):
@@ -398,12 +401,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             active_tasks.pop(job_id, None)
 
-    @app.post("/api/build", status_code=status.HTTP_202_ACCEPTED)
-    async def trigger_build(
-        req: BuildRequest,
-        _auth: str = Depends(require_operator_auth),
-    ) -> dict[str, Any]:
-        """Trigger an autonomous product build in the background."""
+    def build_harness_options(req: BuildHarnessRequest) -> dict[str, str]:
         active_harness = (req.harness or settings.harness).strip().lower()
         model_id = (req.model_id or "").strip()
         if model_id:
@@ -411,6 +409,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(status_code=422, detail="Model ID is only supported for OpenCode")
             if not re.fullmatch(r"[\w.+:@-]+(?:/[\w.+:@-]+)+", model_id, flags=re.ASCII):
                 raise HTTPException(status_code=422, detail="Use provider/model format for OpenCode Model ID")
+        return {"harness": active_harness, **({"model_id": model_id} if model_id else {})}
+
+    def enqueue_build(
+        product_id: str, payload: dict[str, Any], *, retry_of: str | None = None
+    ) -> dict[str, Any]:
+        try:
+            job = store.enqueue(product_id, kind="build", payload=payload, retry_of=retry_of)
+        except Conflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        job_id = job["id"]
+        active_tasks[job_id] = asyncio.create_task(_run_build_in_background(product_id, job_id))
+        return {"status": "queued", "job_id": job_id, "project_id": product_id}
+
+    @app.post("/api/build", status_code=status.HTTP_202_ACCEPTED)
+    async def trigger_build(
+        req: BuildRequest,
+        _auth: str = Depends(require_operator_auth),
+    ) -> dict[str, Any]:
+        """Trigger an autonomous product build in the background."""
+        options = build_harness_options(req)
         product_id = req.product or f"product-{secrets.token_hex(4)}"
 
         # Get or create project
@@ -424,29 +442,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
                 store.event_tx(db, product_id, None, "project.created", {"name": product_id})
 
-        # Enqueue job
-        payload = {"brief": req.brief, "profile": req.profile, "harness": active_harness}
-        if model_id:
-            payload["model_id"] = model_id
-        job = store.enqueue(
-            product_id,
-            kind="build",
-            payload=payload,
-        )
-        job_id = job["id"]
-
-        # Launch background execution task
-        task = asyncio.create_task(_run_build_in_background(product_id, job_id))
-        active_tasks[job_id] = task
-
+        payload = {"brief": req.brief, "profile": req.profile, **options}
         return {
-            "status": "queued",
-            "job_id": job_id,
-            "project_id": product_id,
+            **enqueue_build(product_id, payload),
             "brief": req.brief,
             "profile": req.profile,
-            "harness": active_harness,
+            "harness": options["harness"],
         }
+
+    @app.post("/api/jobs/{job_id}/retry", status_code=status.HTTP_202_ACCEPTED)
+    async def retry_build(
+        job_id: str,
+        req: BuildHarnessRequest,
+        _auth: str = Depends(require_operator_auth),
+    ) -> dict[str, Any]:
+        try:
+            source = store.one("SELECT * FROM jobs WHERE id=? AND kind='build'", (job_id,))
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Build job not found")
+        options = build_harness_options(req)
+        payload = json.loads(source["payload"] or "{}")
+        payload.pop("model_id", None)
+        if "plan_ready" not in payload:
+            payload["plan_ready"] = bool(store.all(
+                "SELECT 1 FROM events WHERE project_id=? AND job_id=? AND kind='build.tasks_started' LIMIT 1",
+                (source["project_id"], job_id),
+            ))
+        payload.update(options, retry_of=job_id)
+        return enqueue_build(source["project_id"], payload, retry_of=job_id)
 
     @app.get("/api/jobs/{job_id}")
     def get_job(job_id: str, _auth: str = Depends(require_operator_auth)) -> dict[str, Any]:
@@ -471,6 +494,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 payload_data = row["payload"]
 
         tasks = store.tasks_for_job(job_id)
+        latest_build = store.all(
+            "SELECT id FROM jobs WHERE project_id=? AND kind='build' ORDER BY created DESC, rowid DESC LIMIT 1",
+            (row["project_id"],),
+        )
         acp_errors = store.all(
             "SELECT seq, created, detail FROM events WHERE project_id=? AND job_id=? "
             "AND kind='acp.error' ORDER BY seq DESC",
@@ -493,6 +520,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "result": result_data,
             "artifact": result_data,
             "tasks": tasks,
+            "can_retry": row["state"] == "failed" and bool(latest_build and latest_build[0]["id"] == job_id),
             "acp_errors": acp_errors,
         }
 
