@@ -9,6 +9,7 @@ let currentDetailTab = "overview";
 let selectedProjectId = null;
 let selectedJobId = null;
 let retryBuildJobId = null;
+const buildRoles = ["planner", "worker"];
 let currentProjectData = null;
 
 let sseController = null;
@@ -1352,6 +1353,11 @@ window.inspectJob = async (jobId) => {
       <button type="button" class="copy-chip" onclick="window.copyText('${esc(j.id)}', 'Job ID')">${esc(j.id)}</button>
       ${renderBadge(j.state)}
     </div>
+    ${j.payload ? buildRoles.map((role) => {
+      const harness = j.payload[`${role}_harness`] || j.payload.harness;
+      const model = j.payload[`${role}_harness`] ? j.payload[`${role}_model_id`] : j.payload.model_id;
+      return harness ? `<div class="muted-xs">${esc(tr(`mod.${role}_harness`))} · ${esc([harness, model].filter(Boolean).join(" · "))}</div>` : "";
+    }).join("") : ""}
 
     ${
       !isClientMode
@@ -1757,25 +1763,28 @@ document.querySelectorAll(".preset-chip").forEach((chip) => {
   });
 });
 
-function syncBuildModelField() {
-  const isOpenCode = $("f-harness").value === "opencode";
-  $("f-model-field").hidden = !isOpenCode;
-  $("f-model-id").disabled = !isOpenCode;
+function syncBuildModelField(role) {
+  const supportsModel = ["opencode", "pi"].includes($(`f-${role}-harness`).value);
+  $(`f-${role}-model-field`).hidden = !supportsModel;
+  $(`f-${role}-model-id`).disabled = !supportsModel;
 }
 
-$("f-harness").addEventListener("change", syncBuildModelField);
+for (const role of buildRoles) {
+  $(`f-${role}-harness`).addEventListener("change", () => {
+    $(`f-${role}-model-id`).value = "";
+    syncBuildModelField(role);
+  });
+}
 
 function populateHarnessSelect(doctor) {
-  const sel = $("f-harness");
-  if (!sel || !doctor) return;
-  const current = sel.value;
+  if (!doctor) return;
   const known = ["agy", "opencode", "codex", "pi", "claude"];
   const avail = doctor.available_harnesses || {};
   const isEn = window.getFactoryLang() === "en";
   const order = [...known];
   if (doctor.harness && !order.includes(doctor.harness)) order.unshift(doctor.harness);
 
-  sel.innerHTML = order
+  const options = order
     .map((name) => {
       const detected = Boolean(avail[name]);
       const suffix = detected ? (isEn ? " (detected)" : " (terdeteksi)") : "";
@@ -1783,12 +1792,14 @@ function populateHarnessSelect(doctor) {
     })
     .join("");
 
-  if (current && order.includes(current)) {
-    sel.value = current;
-  } else if (doctor.harness && order.includes(doctor.harness)) {
-    sel.value = doctor.harness;
+  for (const role of buildRoles) {
+    const sel = $(`f-${role}-harness`);
+    const current = sel.dataset.populated ? sel.value : doctor.harness;
+    sel.innerHTML = options;
+    if (order.includes(current)) sel.value = current;
+    sel.dataset.populated = "true";
+    syncBuildModelField(role);
   }
-  syncBuildModelField();
 }
 
 function closeBuildModal() {
@@ -1806,16 +1817,18 @@ function openBuildModal(job = null) {
   }
   $("f-brief").disabled = retry;
   if (job) {
-    const harness = job.payload?.harness;
-    if ([...$("f-harness").options].some((option) => option.value === harness)) {
-      $("f-harness").value = harness;
+    for (const role of buildRoles) {
+      const sel = $(`f-${role}-harness`);
+      const roleHarness = job.payload?.[`${role}_harness`];
+      const harness = roleHarness || job.payload?.harness;
+      if ([...sel.options].some((option) => option.value === harness)) sel.value = harness;
+      $(`f-${role}-model-id`).value = (roleHarness ? job.payload?.[`${role}_model_id`] : job.payload?.model_id) || "";
+      syncBuildModelField(role);
     }
-    $("f-model-id").value = job.payload?.model_id || "";
-    syncBuildModelField();
   }
   $("f-build-error").hidden = true;
   $("build-modal").hidden = false;
-  setTimeout(() => $(retry ? "f-harness" : "f-product").focus(), 40);
+  setTimeout(() => $(retry ? "f-planner-harness" : "f-product").focus(), 40);
 }
 
 $("new-project-btn").addEventListener("click", () => openBuildModal());
@@ -1853,13 +1866,18 @@ $("build-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = $("submit-build-btn");
   const retryJobId = retryBuildJobId;
-  const harness = $("f-harness").value;
-  const modelId = harness === "opencode" ? $("f-model-id").value.trim() : "";
   const errorBox = $("f-build-error");
   errorBox.hidden = true;
   btn.disabled = true;
   try {
-    const options = { harness, ...(modelId ? { model_id: modelId } : {}) };
+    const options = {};
+    for (const role of buildRoles) {
+      options[`${role}_harness`] = $(`f-${role}-harness`).value;
+      const modelInput = $(`f-${role}-model-id`);
+      if (!modelInput.disabled && modelInput.value.trim()) {
+        options[`${role}_model_id`] = modelInput.value.trim();
+      }
+    }
     const res = await apiFetch(retryJobId ? `/api/jobs/${encodeURIComponent(retryJobId)}/retry` : "/api/build", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1876,7 +1894,7 @@ $("build-form").addEventListener("submit", async (e) => {
       $("f-product").value = "";
       setProfileSelection("static");
     }
-    $("f-model-id").value = "";
+    for (const role of buildRoles) $(`f-${role}-model-id`).value = "";
     showToast(`Build dimulai untuk ${res.project_id}`, "ok");
     await window.openProject(res.project_id, retryJobId ? res.job_id : null);
     selectedJobId = res.job_id;

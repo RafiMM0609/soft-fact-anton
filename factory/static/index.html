@@ -663,8 +663,8 @@
         </div>
 
         <label class="field-label">
-          <span data-i18n="mod.harness">ACP Harness</span>
-          <select id="f-harness">
+          <span data-i18n="mod.planner_harness">ACP Planner &amp; Review</span>
+          <select id="f-planner-harness">
             <option value="agy">agy</option>
             <option value="opencode">opencode</option>
             <option value="codex">codex</option>
@@ -673,10 +673,27 @@
           </select>
         </label>
 
-        <label class="field-label" id="f-model-field" hidden>
+        <label class="field-label" id="f-planner-model-field" hidden>
           <span data-i18n="mod.model_id">Model ID (opsional)</span>
-          <input id="f-model-id" type="text" placeholder="provider/model-id" spellcheck="false" autocomplete="off" disabled>
-          <small data-i18n="mod.model_hint">Lihat ID dengan opencode models. Kosongkan untuk memakai default OpenCode.</small>
+          <input id="f-planner-model-id" type="text" placeholder="provider/model-id" spellcheck="false" autocomplete="off" disabled>
+          <small data-i18n="mod.model_hint">Kosongkan untuk memakai model default harness.</small>
+        </label>
+
+        <label class="field-label">
+          <span data-i18n="mod.worker_harness">ACP Worker</span>
+          <select id="f-worker-harness">
+            <option value="agy">agy</option>
+            <option value="opencode">opencode</option>
+            <option value="codex">codex</option>
+            <option value="pi">pi</option>
+            <option value="claude">claude</option>
+          </select>
+        </label>
+
+        <label class="field-label" id="f-worker-model-field" hidden>
+          <span data-i18n="mod.model_id">Model ID (opsional)</span>
+          <input id="f-worker-model-id" type="text" placeholder="provider/model-id" spellcheck="false" autocomplete="off" disabled>
+          <small data-i18n="mod.model_hint">Kosongkan untuk memakai model default harness.</small>
         </label>
 
         <label id="f-brief-field" class="field-label">
@@ -875,7 +892,7 @@
   <!-- Toast Container -->
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-  <script src="/static/i18n.js?v=8"></script>
-  <script src="/static/app.js?v=8"></script>
+  <script src="/static/i18n.js?v=9"></script>
+  <script src="/static/app.js?v=9"></script>
 </body>
 </html>
