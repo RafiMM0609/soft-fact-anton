@@ -614,13 +614,16 @@
     <div class="card modal">
       <div class="modal-head">
         <div>
-          <div class="eyebrow" data-i18n="mod.new_eyebrow">NEW AUTONOMOUS BUILD</div>
-          <h2 id="modal-title" data-i18n="mod.new_title">Buat &amp; Bangun Proyek Baru</h2>
+          <div id="build-eyebrow" class="eyebrow" data-i18n="mod.new_eyebrow">NEW AUTONOMOUS BUILD</div>
+          <h2 id="modal-title">
+            <span id="new-build-title" data-i18n="mod.new_title">Buat &amp; Bangun Proyek Baru</span>
+            <span id="retry-build-title" data-i18n="job.retry" hidden>Lanjutkan Build dengan ACP Pilihan</span>
+          </h2>
         </div>
         <button id="close-modal-btn" class="icon-btn" type="button" aria-label="Tutup modal">✕</button>
       </div>
 
-      <div class="preset-bar">
+      <div id="build-presets" class="preset-bar">
         <span class="preset-label" data-i18n="mod.preset_label">Contoh Cepat (Demo):</span>
         <div class="preset-chips">
           <button type="button" class="preset-chip" data-preset="landing">Landing Page Korporat</button>
@@ -630,12 +633,13 @@
       </div>
 
       <form id="build-form" class="stack-md">
-        <label class="field-label">
+        <p id="retry-build-hint" class="muted-xs" data-i18n="job.retry_hint" hidden>Task yang sudah berhasil digabung akan dilewati.</p>
+        <label id="f-product-field" class="field-label">
           <span><span data-i18n="mod.product_name">Nama Produk</span> <span class="muted-xs" data-i18n="mod.optional">(opsional — otomatis jika dikosongkan)</span></span>
           <input id="f-product" type="text" placeholder="misal: aurora-client-portal" />
         </label>
 
-        <div class="field-label">
+        <div id="f-profile-field" class="field-label">
           <span data-i18n="mod.arch_profile">Arsitektur Profile</span>
           <input id="f-profile" type="hidden" value="static" />
           <div class="profile-grid" id="profile-selector">
@@ -675,7 +679,7 @@
           <small data-i18n="mod.model_hint">Lihat ID dengan opencode models. Kosongkan untuk memakai default OpenCode.</small>
         </label>
 
-        <label class="field-label">
+        <label id="f-brief-field" class="field-label">
           <span data-i18n="mod.brief">Brief Produk</span>
           <textarea id="f-brief" rows="5" required placeholder="Jelaskan tujuan bisnis, fitur utama, gaya visual, dan alur pengguna yang ingin dibangun..."></textarea>
         </label>
@@ -684,7 +688,8 @@
         <div class="modal-actions">
           <button id="cancel-modal-btn" class="secondary" type="button" data-i18n="mod.cancel">Batal</button>
           <button id="submit-build-btn" class="primary" type="submit">
-            <span data-i18n="mod.start_build">Mulai Autonomous Build</span>
+            <span id="new-build-submit" data-i18n="mod.start_build">Mulai Autonomous Build</span>
+            <span id="retry-build-submit" data-i18n="job.retry_submit" hidden>Lanjutkan Build</span>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polygon points="5 3 19 12 5 21 5 3"></polygon>
             </svg>
@@ -870,7 +875,7 @@
   <!-- Toast Container -->
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-  <script src="/static/i18n.js?v=7"></script>
-  <script src="/static/app.js?v=7"></script>
+  <script src="/static/i18n.js?v=8"></script>
+  <script src="/static/app.js?v=8"></script>
 </body>
 </html>

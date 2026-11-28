@@ -8,6 +8,7 @@ let currentTab = "overview";
 let currentDetailTab = "overview";
 let selectedProjectId = null;
 let selectedJobId = null;
+let retryBuildJobId = null;
 let currentProjectData = null;
 
 let sseController = null;
@@ -1334,6 +1335,9 @@ window.inspectJob = async (jobId) => {
   }).join("");
 
   const btns = [];
+  if (j.can_retry) {
+    btns.push(`<button class="primary sm" id="retry-build-btn" type="button">${esc(tr("job.retry"))}</button>`);
+  }
   if (j.state === "running" || j.state === "queued") {
     btns.push(`<button class="danger sm" onclick="window.cancelJob('${esc(j.id)}')">${esc(tr("job.cancel"))}</button>`);
   }
@@ -1372,6 +1376,7 @@ window.inspectJob = async (jobId) => {
       ${tasksHtml || '<span class="muted-xs">Belum ada task tercatat untuk job ini.</span>'}
     </div>
   `;
+  $("retry-build-btn")?.addEventListener("click", () => openBuildModal(j));
 };
 
 function renderAllJobs() {
@@ -1790,11 +1795,30 @@ function closeBuildModal() {
   $("build-modal").hidden = true;
 }
 
-$("new-project-btn").addEventListener("click", () => {
+function openBuildModal(job = null) {
+  const retry = Boolean(job);
+  retryBuildJobId = job?.id ?? null;
+  for (const id of ["build-eyebrow", "new-build-title", "new-build-submit", "build-presets", "f-product-field", "f-profile-field", "f-brief-field"]) {
+    $(id).hidden = retry;
+  }
+  for (const id of ["retry-build-title", "retry-build-hint", "retry-build-submit"]) {
+    $(id).hidden = !retry;
+  }
+  $("f-brief").disabled = retry;
+  if (job) {
+    const harness = job.payload?.harness;
+    if ([...$("f-harness").options].some((option) => option.value === harness)) {
+      $("f-harness").value = harness;
+    }
+    $("f-model-id").value = job.payload?.model_id || "";
+    syncBuildModelField();
+  }
   $("f-build-error").hidden = true;
   $("build-modal").hidden = false;
-  setTimeout(() => $("f-product").focus(), 40);
-});
+  setTimeout(() => $(retry ? "f-harness" : "f-product").focus(), 40);
+}
+
+$("new-project-btn").addEventListener("click", () => openBuildModal());
 $("close-modal-btn").addEventListener("click", closeBuildModal);
 $("cancel-modal-btn").addEventListener("click", closeBuildModal);
 
@@ -1828,30 +1852,33 @@ document.addEventListener("keydown", (e) => {
 $("build-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = $("submit-build-btn");
+  const retryJobId = retryBuildJobId;
   const harness = $("f-harness").value;
   const modelId = harness === "opencode" ? $("f-model-id").value.trim() : "";
   const errorBox = $("f-build-error");
   errorBox.hidden = true;
   btn.disabled = true;
   try {
-    const res = await apiFetch("/api/build", {
+    const options = { harness, ...(modelId ? { model_id: modelId } : {}) };
+    const res = await apiFetch(retryJobId ? `/api/jobs/${encodeURIComponent(retryJobId)}/retry` : "/api/build", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      body: JSON.stringify(retryJobId ? options : {
         product: $("f-product").value.trim() || null,
         profile: $("f-profile").value,
-        harness,
-        ...(modelId ? { model_id: modelId } : {}),
+        ...options,
         brief: $("f-brief").value.trim(),
       }),
     });
     closeBuildModal();
-    $("f-brief").value = "";
-    $("f-product").value = "";
+    if (!retryJobId) {
+      $("f-brief").value = "";
+      $("f-product").value = "";
+      setProfileSelection("static");
+    }
     $("f-model-id").value = "";
-    setProfileSelection("static");
     showToast(`Build dimulai untuk ${res.project_id}`, "ok");
-    await window.openProject(res.project_id);
+    await window.openProject(res.project_id, retryJobId ? res.job_id : null);
     selectedJobId = res.job_id;
     await refreshWorkspace();
   } catch (err) {
