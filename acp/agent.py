@@ -40,6 +40,7 @@ def clean_markdown_fences(text: str) -> str:
 def _extract_ndjson_text(text: str) -> str | None:
     """Concatenate assistant text chunks from NDJSON event streams (e.g. `opencode run --format json`)."""
     chunks: list[str] = []
+    pi_message = None
     saw_event = False
     for raw_line in text.splitlines():
         line = raw_line.strip()
@@ -52,6 +53,10 @@ def _extract_ndjson_text(text: str) -> str | None:
         if not isinstance(obj, dict) or "type" not in obj:
             continue
         saw_event = True
+        if obj["type"] == "message_end":
+            message = obj.get("message")
+            if isinstance(message, dict) and message.get("role") == "assistant":
+                pi_message = message
         part = obj.get("part")
         if obj.get("type") == "text" and isinstance(part, dict) and isinstance(part.get("text"), str):
             chunks.append(part["text"])
@@ -59,6 +64,13 @@ def _extract_ndjson_text(text: str) -> str | None:
             chunks.append(obj["text"])
         elif isinstance(obj.get("content"), str):
             chunks.append(obj["content"])
+    if pi_message is not None:
+        if pi_message.get("stopReason") in {"error", "aborted"}:
+            raise AcpProcessError(pi_message.get("errorMessage") or "Pi request failed")
+        return "".join(
+            block.get("text", "") for block in (pi_message.get("content") or [])
+            if isinstance(block, dict) and block.get("type") == "text"
+        ).strip() or None
     if saw_event and chunks:
         return "".join(chunks).strip()
     return None
@@ -186,6 +198,17 @@ def extract_usage(raw_output: str) -> dict[str, int]:
             continue
         if not isinstance(obj, dict):
             continue
+        if obj.get("type") == "message_end":
+            message = obj.get("message")
+            if isinstance(message, dict) and message.get("role") == "assistant":
+                pi_usage = message.get("usage")
+                if isinstance(pi_usage, dict):
+                    for field, key in (
+                        ("input_tokens", "input"), ("output_tokens", "output"),
+                        ("cache_read_tokens", "cacheRead"), ("total_tokens", "totalTokens"),
+                    ):
+                        usage[field] += int(pi_usage.get(key) or 0)
+            continue
         part = obj.get("part")
         tokens = part.get("tokens") if isinstance(part, dict) else None
         if not isinstance(tokens, dict):
@@ -257,6 +280,7 @@ class AcpAgent:
         if cancelled():
             raise AcpProcessError("Generation cancelled")
 
+        harness = self.agent_name.strip().lower()
         cmd = print_command(
             instruction=prompt,
             schema=schema,
@@ -264,6 +288,7 @@ class AcpAgent:
             agent_name=self.agent_name,
             harness_path=self.harness_path,
             model=self.model,
+            extra_args=["--no-tools"] if harness == "pi" else None,
         )
 
         if self.runner is not None:
@@ -282,8 +307,8 @@ class AcpAgent:
 
         with tempfile.TemporaryDirectory(prefix="acp_agent_") as tmpdir:
             temp_home = Path(tmpdir)
-            env = isolated_env(temp_home=temp_home)
-            if self.agent_name.strip().lower() == "opencode":
+            env = isolated_env(temp_home=temp_home, agent_name=harness)
+            if harness == "opencode":
                 env["OPENCODE_PURE"] = "1"
                 if opencode_supports_standalone(cmd[0]):
                     cmd.insert(2, "--standalone")
@@ -328,7 +353,9 @@ class AcpAgent:
 
         try:
             return parse_schema_output(output, schema)
-        except (ValidationError, ValueError, Exception) as exc:
+        except AcpProcessError:
+            raise
+        except Exception as exc:
             if cancelled():
                 raise
             logger.warning(

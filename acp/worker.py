@@ -15,7 +15,7 @@ import tempfile
 from typing import Any, Callable
 
 from acp.client import AcpClient
-from acp.harness import acp_command, isolated_env
+from acp.harness import acp_command, isolated_env, print_command, run_process
 from acp.protocol import AcpError, AcpProcessError, AcpRpcError, AcpTimeoutError, JsonRpcNotification
 
 logger = logging.getLogger(__name__)
@@ -148,10 +148,25 @@ class AcpWorker:
 
         with tempfile.TemporaryDirectory(prefix="acp_worker_home_") as tmp_home_dir:
             temp_home = Path(tmp_home_dir)
-            env = isolated_env(worktree=worktree_path, temp_home=temp_home)
-            is_opencode = self.agent_name.strip().lower() == "opencode"
+            harness = self.agent_name.strip().lower()
+            env = isolated_env(worktree=worktree_path, temp_home=temp_home, agent_name=harness)
+            is_opencode = harness == "opencode"
             if is_opencode:
                 env["OPENCODE_PURE"] = "1"
+
+            if harness == "pi" and self.command is None:
+                cmd = print_command(
+                    instruction=prompt_text, mode="text", agent_name=harness,
+                    harness_path=self.harness_path, model=self.model,
+                )
+                runner = self.runner or run_process
+                try:
+                    return runner(
+                        cmd, cwd=worktree_path, env=env, input_data=prompt_text.encode(),
+                        timeout=timeout, cancelled=cancelled,
+                    )
+                except (OSError, AcpError) as exc:
+                    raise AcpWorkerError(f"Pi worker failed: {exc}", output=getattr(exc, "output", "")) from exc
 
             cmd = self.command or acp_command(
                 worktree=worktree_path,

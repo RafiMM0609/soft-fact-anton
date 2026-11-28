@@ -189,7 +189,38 @@ def test_print_command_pi() -> None:
         harness_path="/usr/bin/pi",
         model="gemini-flash",
     )
-    assert cmd == ["/usr/bin/pi", "--print", "--mode", "json", "--model", "gemini-flash"]
+    assert cmd == [
+        "/usr/bin/pi", "--print", "--mode", "json", "--no-session", "--no-extensions",
+        "--model", "gemini-flash",
+    ]
+
+
+def test_pi_worker_executes_in_worktree_with_selected_model(tmp_path: Path) -> None:
+    def runner(cmd, *, cwd, env, input_data, **kwargs):
+        assert cmd == [
+            "/usr/bin/pi", "--print", "--mode", "text", "--no-session", "--no-extensions",
+            "--model", "provider/worker-model",
+        ]
+        assert cwd == tmp_path.resolve()
+        assert b"Build app" in input_data
+        assert Path(env["PI_CODING_AGENT_DIR"]).is_dir()
+        return "done"
+
+    worker = AcpWorker(agent_name="pi", model="provider/worker-model", harness_path="/usr/bin/pi", runner=runner)
+    assert worker.run_task(tmp_path, "Build app") == "done"
+
+
+def test_pi_json_generation_reads_final_message_and_usage() -> None:
+    output = json.dumps({
+        "type": "message_end",
+        "message": {
+            "role": "assistant",
+            "content": [{"type": "text", "text": '{"summary":"Pi plan","tasks":[]}'}],
+            "usage": {"input": 10, "output": 5, "cacheRead": 7, "totalTokens": 22},
+        },
+    })
+    assert parse_schema_output(output, PlanSchema).summary == "Pi plan"
+    assert extract_usage(output)["total_tokens"] == 22
 
 
 def test_print_command_opencode() -> None:

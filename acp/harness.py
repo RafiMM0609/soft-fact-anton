@@ -311,7 +311,14 @@ def print_command(
             cmd.extend(["--model", model])
         cmd.append(instruction)
     elif normalized == "pi":
-        cmd = [executable, "--print", "--mode", "json"]
+        cmd = [executable]
+        if os.name == "nt" and Path(executable).suffix.lower() == ".cmd":
+            bin_dir = Path(executable).parent / "node_modules" / "@earendil-works" / "pi-coding-agent"
+            entry = bin_dir / "dist" / "bundle" / "cli.js"
+            node = shutil.which("node")
+            if node and entry.is_file():
+                cmd = [node, str(entry)]
+        cmd.extend(["--print", "--mode", "text" if mode == "text" else "json", "--no-session", "--no-extensions"])
         if model:
             cmd.extend(["--model", model])
     else:
@@ -348,6 +355,7 @@ def isolated_env(
     worktree: Path | str | None = None,
     temp_home: Path | str | None = None,
     base_env: dict[str, str] | None = None,
+    agent_name: str | None = None,
 ) -> dict[str, str]:
     """Construct an isolated environment dictionary for worker or agent processes.
 
@@ -357,6 +365,7 @@ def isolated_env(
         worktree: Optional path to worktree root.
         temp_home: Temporary directory to use as HOME.
         base_env: Optional base environment to filter (defaults to os.environ).
+        agent_name: Harness whose local configuration should be made available.
 
     Returns:
         Cleaned, isolated environment dictionary.
@@ -454,6 +463,25 @@ def isolated_env(
         env["XDG_DATA_HOME"] = str(home_path / ".local" / "share")
         env["AGY_APP_DATA_DIR"] = str(home_path / ".gemini" / "antigravity-cli")
         env["PI_CODING_AGENT_DIR"] = str(home_path / ".pi" / "agent")
+        if agent_name == "pi":
+            pi_source = Path(source.get("PI_CODING_AGENT_DIR") or real_home / ".pi" / "agent").expanduser()
+            pi_target = Path(env["PI_CODING_AGENT_DIR"])
+            pi_target.mkdir(parents=True, mode=0o700)
+            for name in ("auth.json", "models.json"):
+                if (pi_source / name).is_file():
+                    shutil.copy2(pi_source / name, pi_target / name)
+            pi_settings = pi_source / "settings.json"
+            if pi_settings.is_file():
+                try:
+                    defaults = json.loads(pi_settings.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    defaults = {}
+                if isinstance(defaults, dict):
+                    keys = ("defaultProvider", "defaultModel", "defaultThinkingLevel")
+                    (pi_target / "settings.json").write_text(
+                        json.dumps({key: defaults[key] for key in keys if key in defaults}),
+                        encoding="utf-8",
+                    )
         env["NPM_CONFIG_UPDATE_NOTIFIER"] = "false"
         env["PI_TELEMETRY_DISABLED"] = "1"
 
