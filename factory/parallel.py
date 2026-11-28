@@ -13,7 +13,7 @@ import time
 from typing import Any, Callable
 
 from acp.agent import AcpAgent
-from acp.protocol import AcpError
+from acp.protocol import AcpError, is_quota_exhausted
 from acp.worker import AcpWorker
 from factory.models import Plan, Review, Task
 from factory.products import (
@@ -344,7 +344,8 @@ class ParallelBuilder:
                                 detail={"error": str(outcome.error)},
                             )
 
-                        if attempts[t.id] >= self.max_repairs:
+                        quota_exhausted = is_quota_exhausted(outcome.error)
+                        if quota_exhausted or attempts[t.id] >= self.max_repairs:
                             if self.store:
                                 self.store.set_task_state(
                                     job_id, t.id, "failed", {"error": str(outcome.error)}
@@ -353,9 +354,12 @@ class ParallelBuilder:
                             if hasattr(outcome.error, "output") and outcome.error.output:
                                 lines = outcome.error.output.strip().splitlines()
                                 out_tail = "\nWorker output tail:\n" + "\n".join(lines[-15:])
-                            raise ParallelBuildError(
-                                f"Task '{t.id}' failed after {attempts[t.id]} attempts: {outcome.error}{out_tail}"
+                            reason = (
+                                "stopped because ACP quota is exhausted"
+                                if quota_exhausted
+                                else f"failed after {attempts[t.id]} attempts"
                             )
+                            raise ParallelBuildError(f"Task '{t.id}' {reason}: {outcome.error}{out_tail}")
 
                         repair_feedbacks[t.id] = format_repair_feedback(
                             outcome.error, task_findings[t.id]
@@ -403,6 +407,10 @@ class ParallelBuilder:
                                     project_id, job_id, "review", self.agent, exc,
                                     task_id=t.id, attempt=attempts[t.id], review_attempt=review_attempt + 1,
                                 )
+                            if is_quota_exhausted(exc):
+                                if self.store:
+                                    self.store.set_task_state(job_id, t.id, "failed", {"error": str(exc)})
+                                raise ParallelBuildError(f"Task '{t.id}' review stopped: {exc}") from exc
                             logger.warning(
                                 "Diff review attempt %d for task %s failed with exception: %s",
                                 review_attempt + 1,

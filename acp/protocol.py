@@ -82,6 +82,20 @@ class AcpError(Exception):
     """Base exception for all ACP errors."""
 
 
+def is_quota_exhausted(error: BaseException | None) -> bool:
+    """Recognize explicit quota exhaustion without treating all rate limits as permanent."""
+    if not isinstance(error, AcpError):
+        return False
+    message = str(error).casefold()
+    return any(marker in message for marker in (
+        "free usage limit reached",
+        "freeusagelimiterror",
+        "gousagelimiterror",
+        "insufficient_quota",
+        "billing_hard_limit_reached",
+    ))
+
+
 class AcpRpcError(AcpError):
     """Raised when an ACP server returns a JSON-RPC error response."""
 

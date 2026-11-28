@@ -206,7 +206,6 @@ class AcpWorker:
                     env=env,
                     default_timeout=float(timeout),
                 )
-                client.on_notification("session/update", handle_notification)
                 client.on_notification("*", handle_notification)
 
                 try:

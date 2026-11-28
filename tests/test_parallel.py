@@ -389,8 +389,18 @@ def test_merge_conflict_handling_and_retry(test_setup: dict[str, Any]):
     assert "Appended by B" in content
 
 
-@pytest.mark.parametrize("worker_fails", [False, True])
-def test_max_repairs_exceeded(test_setup: dict[str, Any], worker_fails: bool):
+@pytest.mark.parametrize(("worker_error", "review_error", "logged_attempts"), [
+    (None, None, []),
+    ("HTTP 429: Rate limited", None, [1, 2]),
+    ("Free usage limit reached", None, [1]),
+    (None, "insufficient_quota", [1]),
+])
+def test_max_repairs_exceeded(
+    test_setup: dict[str, Any],
+    worker_error: str | None,
+    review_error: str | None,
+    logged_attempts: list[int],
+):
     """Test that exhausted attempts fail and ACP errors remain available."""
     data_dir = test_setup["data_dir"]
     store = test_setup["store"]
@@ -403,20 +413,25 @@ def test_max_repairs_exceeded(test_setup: dict[str, Any], worker_fails: bool):
     plan = Plan(summary="Failing plan", tasks=[task])
 
     def mock_worker_runner(cmd: list[str], cwd: Path | None = None, **kwargs: Any) -> str:
-        if worker_fails:
-            raise AcpWorkerError("Model unavailable")
+        if worker_error:
+            raise AcpWorkerError(worker_error)
         assert cwd is not None
         (cwd / "fail.py").write_text("# incomplete\n", encoding="utf-8")
         return "done"
 
     # Review always rejects
     def mock_review(t: Task, diff: str, ctx: dict[str, Any]) -> Review:
+        if review_error:
+            raise AcpWorkerError(review_error)
         return Review(decision="rejected", findings=["Permanent flaw detected"])
 
     worker = AcpWorker(runner=mock_worker_runner, harness_path="/usr/bin/agy")
     builder = ParallelBuilder(settings=settings, store=store, worker=worker)
 
-    with pytest.raises(ParallelBuildError, match="failed after 2 attempts|rejected after 2 attempts"):
+    with pytest.raises(
+        ParallelBuildError,
+        match="failed after 2 attempts|rejected after 2 attempts|quota is exhausted|review stopped",
+    ):
         builder.build_tasks(
             project=project,
             job=job,
@@ -428,7 +443,7 @@ def test_max_repairs_exceeded(test_setup: dict[str, Any], worker_fails: bool):
     t_rec = store.task(job["id"], "failing_task")
     assert t_rec["state"] == "failed"
     errors = store.all("SELECT detail FROM events WHERE job_id=? AND kind='acp.error' ORDER BY seq", (job["id"],))
-    assert [json.loads(event["detail"])["attempt"] for event in errors] == ([1, 2] if worker_fails else [])
+    assert [json.loads(event["detail"])["attempt"] for event in errors] == logged_attempts
 
     # Verify worktree directory is cleaned up
     root = ensure_repo(data_dir, project["id"])
