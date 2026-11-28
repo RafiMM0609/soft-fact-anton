@@ -104,6 +104,29 @@ def test_api_build_and_job_lifecycle(test_app_and_client):
         assert len(proj_data["recent_jobs"]) >= 1
 
 
+def test_api_build_with_distinct_planner_and_worker(test_app_and_client):
+    _, client, store, token = test_app_and_client
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = {
+        "brief": "Build a site",
+        "planner_harness": "opencode",
+        "planner_model_id": "opencode/planner",
+        "worker_harness": "pi",
+        "worker_model_id": "provider/worker",
+    }
+    invalid = client.post("/api/build", json={**payload, "worker_harness": "agy"}, headers=headers)
+    assert invalid.status_code == 422 and "Worker Model ID" in invalid.json()["detail"]
+    with patch("factory.engine.Engine.build", autospec=True) as mock_build:
+        response = client.post("/api/build", json=payload, headers=headers)
+        assert response.status_code == 202
+        build_engine = mock_build.call_args.args[0]
+        assert (build_engine.agent.agent_name, build_engine.agent.model) == ("opencode", "opencode/planner")
+        assert (build_engine.worker.agent_name, build_engine.worker.model) == ("pi", "provider/worker")
+    job_id = response.json()["job_id"]
+    details = client.get(f"/api/jobs/{job_id}", headers=headers).json()
+    assert all(details["payload"][key] == value for key, value in payload.items())
+
+
 def test_api_retry_failed_build_with_new_harness(test_app_and_client):
     _, client, store, token = test_app_and_client
     headers = {"Authorization": f"Bearer {token}"}

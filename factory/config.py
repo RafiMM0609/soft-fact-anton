@@ -67,6 +67,10 @@ class Settings:
     )
     operator_token: str | None = None
     opencode_model: str | None = None
+    planner_harness: str | None = None
+    planner_model_id: str | None = None
+    worker_harness: str | None = None
+    worker_model_id: str | None = None
 
     def __post_init__(self) -> None:
         self.data = Path(self.data)
@@ -97,9 +101,9 @@ class Settings:
     def starters_dir(self) -> Path:
         return (Path(__file__).parent / "starters").resolve()
 
-    def resolve_harness_path(self) -> str | None:
+    def resolve_harness_path(self, harness: str | None = None) -> str | None:
         """Resolve the active harness executable path, auto-detecting across PATH and ~/.local/bin."""
-        normalized = self.harness.strip().lower()
+        normalized = (harness or self.harness).strip().lower()
         if normalized == "agy":
             if os.getenv("FACTORY_AGY"):
                 return self.agy

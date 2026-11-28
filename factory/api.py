@@ -84,6 +84,10 @@ class BuildHarnessRequest(BaseModel):
         description="Optional ACP harness override for this build",
     )
     model_id: str | None = None
+    planner_harness: str | None = Field(default=None, pattern=r"^(agy|opencode|codex|pi|claude)$")
+    planner_model_id: str | None = None
+    worker_harness: str | None = Field(default=None, pattern=r"^(agy|opencode|codex|pi|claude)$")
+    worker_model_id: str | None = None
 
 
 class BuildRequest(BuildHarnessRequest):
@@ -378,10 +382,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     parsed_payload = None
                 if isinstance(parsed_payload, dict) and parsed_payload.get("harness"):
                     job_harness = str(parsed_payload["harness"]).strip().lower()
-                    job_model = parsed_payload.get("model_id") if job_harness == "opencode" else None
-                    if job_harness and (job_harness != settings.harness.strip().lower() or job_model):
+                    job_model = parsed_payload.get("model_id") if job_harness in {"opencode", "pi"} else None
+                    roles = {
+                        key: parsed_payload[key]
+                        for key in ("planner_harness", "planner_model_id", "worker_harness", "worker_model_id")
+                        if key in parsed_payload
+                    }
+                    if job_harness and (job_harness != settings.harness.strip().lower() or job_model or roles):
                         job_settings = dataclasses.replace(
-                            settings, harness=job_harness, opencode_model=job_model
+                            settings, harness=job_harness, opencode_model=job_model, **roles
                         )
                         job_engine = Engine(settings=job_settings, store=store)
 
@@ -401,15 +410,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             active_tasks.pop(job_id, None)
 
+    def validate_model(harness: str, model_id: str, label: str) -> None:
+        if not model_id:
+            return
+        if harness not in {"opencode", "pi"}:
+            raise HTTPException(status_code=422, detail=f"{label} is supported for OpenCode and Pi")
+        if not re.fullmatch(r"[\w.+:@-]+(?:/[\w.+:@-]+)+", model_id, flags=re.ASCII):
+            raise HTTPException(status_code=422, detail=f"Use provider/model format for {label}")
+
     def build_harness_options(req: BuildHarnessRequest) -> dict[str, str]:
         active_harness = (req.harness or settings.harness).strip().lower()
         model_id = (req.model_id or "").strip()
-        if model_id:
-            if active_harness != "opencode":
-                raise HTTPException(status_code=422, detail="Model ID is only supported for OpenCode")
-            if not re.fullmatch(r"[\w.+:@-]+(?:/[\w.+:@-]+)+", model_id, flags=re.ASCII):
-                raise HTTPException(status_code=422, detail="Use provider/model format for OpenCode Model ID")
-        return {"harness": active_harness, **({"model_id": model_id} if model_id else {})}
+        validate_model(active_harness, model_id, "Model ID")
+        options = {"harness": active_harness, **({"model_id": model_id} if model_id else {})}
+        for role in ("planner", "worker"):
+            harness = getattr(req, f"{role}_harness")
+            role_model = (getattr(req, f"{role}_model_id") or "").strip()
+            if harness or role_model:
+                harness = harness or active_harness
+                validate_model(harness, role_model, f"{role.title()} Model ID")
+                options[f"{role}_harness"] = harness
+                if role_model:
+                    options[f"{role}_model_id"] = role_model
+        return options
 
     def enqueue_build(
         product_id: str, payload: dict[str, Any], *, retry_of: str | None = None
@@ -448,6 +471,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "brief": req.brief,
             "profile": req.profile,
             "harness": options["harness"],
+            **{key: value for key, value in options.items() if key.startswith(("planner_", "worker_"))},
         }
 
     @app.post("/api/jobs/{job_id}/retry", status_code=status.HTTP_202_ACCEPTED)
@@ -462,7 +486,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Build job not found")
         options = build_harness_options(req)
         payload = json.loads(source["payload"] or "{}")
-        payload.pop("model_id", None)
+        for key in ("model_id", "planner_harness", "planner_model_id", "worker_harness", "worker_model_id"):
+            payload.pop(key, None)
         if "plan_ready" not in payload:
             payload["plan_ready"] = bool(store.all(
                 "SELECT 1 FROM events WHERE project_id=? AND job_id=? AND kind='build.tasks_started' LIMIT 1",

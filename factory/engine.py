@@ -54,21 +54,30 @@ class Engine:
     ) -> None:
         self.settings = settings if settings is not None else Settings()
         self.store = store if store is not None else Store(self.settings.data / "factory.db")
-        resolved_harness = self.settings.resolve_harness_path()
-        model = (
+        legacy_model = (
             self.settings.opencode_model
-            if self.settings.harness.strip().lower() == "opencode"
+            if self.settings.harness.strip().lower() in {"opencode", "pi"}
             else None
         )
+        planner_harness = self.settings.planner_harness or self.settings.harness
+        worker_harness = self.settings.worker_harness or self.settings.harness
+        planner_model = self.settings.planner_model_id if self.settings.planner_harness else legacy_model
+        worker_model = self.settings.worker_model_id if self.settings.worker_harness else legacy_model
         self.agent = (
             agent
             if agent is not None
-            else AcpAgent(agent_name=self.settings.harness, harness_path=resolved_harness, model=model)
+            else AcpAgent(
+                agent_name=planner_harness, harness_path=self.settings.resolve_harness_path(planner_harness),
+                model=planner_model,
+            )
         )
         self.worker = (
             worker
             if worker is not None
-            else AcpWorker(agent_name=self.settings.harness, harness_path=resolved_harness, model=model)
+            else AcpWorker(
+                agent_name=worker_harness, harness_path=self.settings.resolve_harness_path(worker_harness),
+                model=worker_model,
+            )
         )
         self.verifier = verifier if verifier is not None else Verifier()
         self.tester = tester if tester is not None else Tester()
